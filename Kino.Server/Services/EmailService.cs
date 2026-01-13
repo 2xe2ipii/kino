@@ -19,8 +19,10 @@ namespace Kino.Server.Services
             try
             {
                 var email = new MimeMessage();
-                // Ensure the "From" address is not empty to avoid a crash if config is missing
-                var fromEmail = _config["Gmail:Email"] ?? "no-reply@kino.com"; 
+                
+                // 1. Get Sender Email (Default to "no-reply" if missing)
+                var fromEmail = _config["Smtp:From"] ?? "no-reply@kino.com";
+                
                 email.From.Add(MailboxAddress.Parse(fromEmail));
                 email.To.Add(MailboxAddress.Parse(toEmail));
                 email.Subject = subject;
@@ -28,11 +30,21 @@ namespace Kino.Server.Services
 
                 using var smtp = new SmtpClient();
                 
-                // FIX: Use Port 465 with SslOnConnect (Bypasses most firewall/AV hangs)
-                await smtp.ConnectAsync("smtp.gmail.com", 465, SecureSocketOptions.SslOnConnect);
+                // 2. Get Host & Port from Config (Default to Brevo / 2525)
+                var host = _config["Smtp:Host"] ?? "smtp-relay.brevo.com";
+                var port = int.Parse(_config["Smtp:Port"] ?? "2525");
 
-                // Authenticate
-                await smtp.AuthenticateAsync(_config["Gmail:Email"], _config["Gmail:Password"]);
+                // 3. Connect using StartTls (REQUIRED for Port 2525)
+                await smtp.ConnectAsync(host, port, SecureSocketOptions.StartTls);
+
+                // 4. Authenticate
+                var user = _config["Smtp:User"];
+                var pass = _config["Smtp:Pass"];
+                
+                if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
+                {
+                    await smtp.AuthenticateAsync(user, pass);
+                }
 
                 await smtp.SendAsync(email);
                 await smtp.DisconnectAsync(true);
@@ -41,8 +53,8 @@ namespace Kino.Server.Services
             }
             catch (Exception ex)
             {
-                // Log the actual error to your server console so you can see it!
-                Console.WriteLine($"[EMAIL ERROR]: {ex.Message}"); 
+                // Logs error to Render console so you can debug
+                Console.WriteLine($"[EMAIL ERROR]: {ex.Message}");
                 return false;
             }
         }

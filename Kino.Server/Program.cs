@@ -36,11 +36,15 @@ if (!string.IsNullOrEmpty(jwtKey))
     builder.Configuration["Jwt:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
 }
 
-var gmail = Environment.GetEnvironmentVariable("GMAIL_EMAIL");
-if (!string.IsNullOrEmpty(gmail))
+// Load SMTP settings from Environment Variables (Brevo)
+var smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST");
+if (!string.IsNullOrEmpty(smtpHost))
 {
-    builder.Configuration["Gmail:Email"] = gmail;
-    builder.Configuration["Gmail:Password"] = Environment.GetEnvironmentVariable("GMAIL_PASSWORD");
+    builder.Configuration["Smtp:Host"] = smtpHost;
+    builder.Configuration["Smtp:Port"] = Environment.GetEnvironmentVariable("SMTP_PORT");
+    builder.Configuration["Smtp:User"] = Environment.GetEnvironmentVariable("SMTP_USER");
+    builder.Configuration["Smtp:Pass"] = Environment.GetEnvironmentVariable("SMTP_PASS");
+    builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
 }
 
 // Add services to the container.
