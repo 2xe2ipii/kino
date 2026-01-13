@@ -18,34 +18,31 @@ namespace Kino.Server.Services
         {
             try
             {
-                // 1. Create the email object
                 var email = new MimeMessage();
-                email.From.Add(MailboxAddress.Parse(_config["Gmail:Email"]));
+                // Ensure the "From" address is not empty to avoid a crash if config is missing
+                var fromEmail = _config["Gmail:Email"] ?? "no-reply@kino.com"; 
+                email.From.Add(MailboxAddress.Parse(fromEmail));
                 email.To.Add(MailboxAddress.Parse(toEmail));
                 email.Subject = subject;
                 email.Body = new TextPart(TextFormat.Html) { Text = body };
 
-                // 2. Connect to Gmail's SMTP Server
                 using var smtp = new SmtpClient();
                 
-                // Connect to smtp.gmail.com on port 587 using StartTLS security
-                await smtp.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+                // FIX: Use Port 465 with SslOnConnect (Bypasses most firewall/AV hangs)
+                await smtp.ConnectAsync("smtp.gmail.com", 465, SecureSocketOptions.SslOnConnect);
 
-                // Authenticate with your App Password
+                // Authenticate
                 await smtp.AuthenticateAsync(_config["Gmail:Email"], _config["Gmail:Password"]);
 
-                // Send
                 await smtp.SendAsync(email);
-                
-                // Disconnect cleanly
                 await smtp.DisconnectAsync(true);
 
                 return true;
             }
             catch (Exception ex)
             {
-                // In a real app, log this error!
-                Console.WriteLine($"Email send failed: {ex.Message}");
+                // Log the actual error to your server console so you can see it!
+                Console.WriteLine($"[EMAIL ERROR]: {ex.Message}"); 
                 return false;
             }
         }
