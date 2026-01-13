@@ -8,7 +8,7 @@
 
 > *"Cinema is a mirror of reality, often distorted."*
 
-**Kino** is a specialized social film diary designed for cinephiles. It allows you to track, rate, and review every film you watch, building a comprehensive history of your life in movies.
+**Kino** is a social film diary designed for cinephiles. It allows you to track, rate, and review every film you watch. Yea, like Letterboxd. So unique.
 
 Built with a focus on **Clean Architecture**, it leverages the raw performance of .NET on the backend and the instant reactivity of modern React.
 
