@@ -1,8 +1,12 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization; // FIXED: Needed for [Authorize]
+using Microsoft.EntityFrameworkCore;      // FIXED: Needed for async DB calls
+using System.Security.Claims;             // FIXED: Needed for User.FindFirstValue
+using Kino.Server.Data;                   // FIXED: Needed for AppDbContext
+using Kino.Server.Models;
 using Kino.Server.DTOs;
 using Kino.Server.Services;
-using System.Text.Encodings.Web;
 
 namespace Kino.Server.Controllers
 {
@@ -14,13 +18,21 @@ namespace Kino.Server.Controllers
         private readonly SignInManager<IdentityUser> _signInManager;
         private readonly ITokenService _tokenService;
         private readonly IEmailService _emailService;
+        private readonly AppDbContext _context; // FIXED: Added Context field
 
-        public AuthController(UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager, ITokenService tokenService, IEmailService emailService)
+        // FIXED: Inject AppDbContext in constructor
+        public AuthController(
+            UserManager<IdentityUser> userManager, 
+            SignInManager<IdentityUser> signInManager, 
+            ITokenService tokenService, 
+            IEmailService emailService,
+            AppDbContext context) 
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _tokenService = tokenService;
             _emailService = emailService;
+            _context = context; 
         }
 
         [HttpPost("register")]
@@ -34,7 +46,6 @@ namespace Kino.Server.Controllers
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingUser))
                 {
-                    // Found a Zombie! (Exists but not verified). Delete it.
                     await _userManager.DeleteAsync(existingUser);
                 }
                 else
@@ -49,7 +60,6 @@ namespace Kino.Server.Controllers
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingEmail))
                 {
-                    // Found a Zombie Email! Delete it.
                     await _userManager.DeleteAsync(existingEmail);
                 }
                 else
@@ -71,7 +81,6 @@ namespace Kino.Server.Controllers
                     
                     if (!emailSent)
                     {
-                        // ROLLBACK: If email fails, delete the user immediately so we don't create a new Zombie.
                         await _userManager.DeleteAsync(user);
                         return StatusCode(500, "Email failed to send. Please check App Password. User deleted - try again.");
                     }
@@ -80,13 +89,11 @@ namespace Kino.Server.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // CRASH ROLLBACK
                     await _userManager.DeleteAsync(user);
                     return StatusCode(500, $"Email System Crash: {ex.Message}");
                 }
             }
 
-            // Return detailed validation errors (e.g., Password too short)
             return BadRequest(result.Errors);
         }
 
@@ -112,7 +119,6 @@ namespace Kino.Server.Controllers
             var user = await _userManager.FindByNameAsync(request.Username);
             if (user == null) return Unauthorized("Invalid username or password.");
 
-            // This check is now safe to keep because we fixed the Registration flow!
             if (!await _userManager.IsEmailConfirmedAsync(user))
             {
                 return Unauthorized("Please check your email for the verification code.");
@@ -136,7 +142,6 @@ namespace Kino.Server.Controllers
         {
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            // PREMIUM HTML EMAIL TEMPLATE
             var emailBody = $@"
             <!DOCTYPE html>
             <html>
@@ -144,14 +149,12 @@ namespace Kino.Server.Controllers
                 <meta charset='utf-8'>
                 <meta name='viewport' content='width=device-width, initial-scale=1.0'>
                 <style>
-                    /* Reset */
                     body {{ margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }}
                     .container {{ width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.05); margin-top: 40px; margin-bottom: 40px; border: 1px solid #e2e8f0; }}
                     .header {{ background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%); padding: 40px 0; text-align: center; border-bottom: 1px solid #f1f5f9; }}
                     .content {{ padding: 40px 48px; text-align: center; }}
                     .code-box {{ background-color: #fff1f2; color: #be185d; font-size: 32px; letter-spacing: 8px; font-weight: bold; padding: 24px; border-radius: 16px; margin: 32px 0; border: 2px dashed #fbcfe8; display: inline-block; font-family: 'Courier New', monospace; }}
                     .footer {{ background-color: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; }}
-                    .btn {{ display: inline-block; padding: 12px 24px; background-color: #be185d; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px; }}
                     h1 {{ color: #0f172a; font-size: 24px; margin: 0 0 16px 0; letter-spacing: -0.5px; }}
                     p {{ color: #475569; font-size: 16px; line-height: 1.6; margin: 0; }}
                 </style>
@@ -183,5 +186,55 @@ namespace Kino.Server.Controllers
 
             return await _emailService.SendEmailAsync(user.Email!, "Your Kino Verification Code", emailBody);
         }
+
+        // --- PROFILE ENDPOINTS (FIXED) ---
+
+        [Authorize]
+        [HttpGet("profile")]
+        public async Task<IActionResult> GetProfile()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+            
+            return Ok(new 
+            { 
+                displayName = profile?.DisplayName ?? "",
+                avatarUrl = profile?.AvatarUrl ?? "",
+                bio = profile?.Bio ?? "", 
+                favoriteMovie = profile?.FavoriteMovie ?? "" 
+            });
+        }
+
+        [Authorize]
+        [HttpPut("profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UserProfileDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+
+            if (profile == null)
+            {
+                profile = new UserProfile { UserId = userId };
+                _context.UserProfiles.Add(profile);
+            }
+
+            // Save the new fields
+            profile.DisplayName = dto.DisplayName;
+            profile.AvatarUrl = dto.AvatarUrl;
+            profile.Bio = dto.Bio;
+            profile.FavoriteMovie = dto.FavoriteMovie; // Keeping this in DB just in case
+            
+            await _context.SaveChangesAsync();
+            return Ok(profile);
+        }
+    }
+    public class UserProfileDto
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public string AvatarUrl { get; set; } = string.Empty;
+        public string Bio { get; set; } = string.Empty;
+        public string FavoriteMovie { get; set; } = string.Empty;
     }
 }

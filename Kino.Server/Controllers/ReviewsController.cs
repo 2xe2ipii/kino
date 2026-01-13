@@ -4,11 +4,13 @@ using Kino.Server.Data;
 using Kino.Server.Models;
 using Kino.Server.DTOs;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization; // Required for [Authorize]
 
 namespace Kino.Server.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // <--- Forces user to be logged in
     public class ReviewsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -21,11 +23,11 @@ namespace Kino.Server.Controllers
         [HttpPost]
         public async Task<IActionResult> PostReview(CreateReviewDto dto)
         {
-            // 1. Check if the movie already exists in our local DB by TmdbId
-            var movie = await _context.Movies
-                .FirstOrDefaultAsync(m => m.TmdbId == dto.MovieId);
+            // Get the User ID from the valid Token
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            // 2. If it doesn't exist, create it
+            var movie = await _context.Movies.FirstOrDefaultAsync(m => m.TmdbId == dto.MovieId);
+
             if (movie == null)
             {
                 movie = new Movie
@@ -33,22 +35,19 @@ namespace Kino.Server.Controllers
                     TmdbId = dto.MovieId,
                     Title = dto.MovieTitle,
                     PosterPath = dto.PosterPath,
-                    // We default Year to 0 or current year since the frontend 
-                    // didn't send the release date in this specific payload.
-                    Year = DateTime.UtcNow.Year 
+                    Year = DateTime.UtcNow.Year
                 };
-
                 _context.Movies.Add(movie);
                 await _context.SaveChangesAsync();
             }
 
-            // 3. Create the review linked to the internal MovieId
             var review = new Review
             {
-                MovieId = movie.Id, // Link to the internal Primary Key
+                MovieId = movie.Id,
                 Rating = dto.Rating,
                 Content = dto.Content,
-                CreatedAt = dto.DateWatched.ToUniversalTime() // Use the user's selected date
+                CreatedAt = dto.DateWatched.ToUniversalTime(),
+                UserId = userId // <--- Save the User ID
             };
 
             _context.Reviews.Add(review);
@@ -56,13 +55,16 @@ namespace Kino.Server.Controllers
 
             return Ok(review);
         }
-        
-        // Optional: Get all reviews to see your diary
+
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetReviews()
         {
+            // Get the User ID from the token
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
+                .Where(r => r.UserId == userId) // <--- Filter: Only MY reviews
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new 
                 {
@@ -70,11 +72,11 @@ namespace Kino.Server.Controllers
                     r.Rating,
                     r.Content,
                     r.CreatedAt,
-                    // Use '!' to suppress the nullable warning
                     Movie = new {
                         Title = r.Movie!.Title,
                         PosterPath = r.Movie.PosterPath,
-                        Year = r.Movie.Year
+                        Year = r.Movie.Year,
+                        TmdbId = r.Movie.TmdbId
                     }
                 })
                 .ToListAsync();
