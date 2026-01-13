@@ -64,7 +64,9 @@ const Home = () => {
             //
             // const res = await api.get(`/tmdb/search?query=${searchQuery}`);
             const res = await api.get(`/tmdb/search?query=${searchQuery}`);
-            const movies = res.data.results || [];
+            // const movies = res.data.results || [];
+            // The backend returns the array directly, so just use res.data
+            const movies = res.data || [];
             
             if (isDropdown) {
                 setDropdownResults(movies.slice(0, 5)); // Limit to top 5 for dropdown
@@ -233,10 +235,25 @@ const Home = () => {
             </div>
 
             {/* Developer Credits */}
-            <div className="fixed bottom-4 right-6 pointer-events-none z-0">
+            {/* Developer Credits & Attribution */}
+            <div className="fixed bottom-4 right-6 pointer-events-none z-0 text-right flex flex-col items-end gap-2">
+                
+                {/* Your Credit */}
                 <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest opacity-60">
                     Developed by <span className="font-bold text-slate-500">2xe2ipi</span>
                 </p>
+
+                {/* TMDB Attribution */}
+                <div className="flex items-center gap-2 opacity-50">
+                    <img 
+                        src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" 
+                        alt="TMDB Logo" 
+                        className="h-3" 
+                    />
+                    <p className="text-[8px] text-slate-400 max-w-[150px] leading-tight">
+                        This product uses the TMDB API but is not endorsed or certified by TMDB.
+                    </p>
+                </div>
             </div>
 
             {/* Log Movie Modal */}

@@ -26,9 +26,10 @@ export const LogMovieModal = ({ movie, isOpen, onClose }: LogMovieModalProps) =>
             // 2. Post the Review/Log
             // Note: Assuming a /reviews endpoint exists based on SRS requirements
             await api.post('/reviews', {
-                movieId: movie.id, // TMDB ID
+                movieId: movie.id,
                 movieTitle: movie.title,
                 posterPath: movie.poster_path,
+                releaseDate: movie.release_date, // Add this line
                 rating,
                 content: review,
                 dateWatched
