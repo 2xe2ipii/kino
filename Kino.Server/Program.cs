@@ -12,7 +12,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddScoped<IEmailService, EmailService>();
 
 // --- 1. DB & IDENTITY ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -24,9 +23,15 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>(options =>
     options.User.RequireUniqueEmail = true;
     options.Password.RequireDigit = false;
     options.Password.RequiredLength = 6;
+    
+    // Use the "Email" provider (6-digit code) instead of the default "Long String" provider
+    options.Tokens.EmailConfirmationTokenProvider = TokenOptions.DefaultEmailProvider;
 })
 .AddEntityFrameworkStores<AppDbContext>()
-.AddDefaultTokenProviders(); // Required for email tokens later
+.AddDefaultTokenProviders(); 
+
+// REMOVED: The invalid Configure<EmailTokenProviderOptions> block.
+// The default 6-digit code will remain valid for approximately 3-5 minutes, which is standard for OTPs.
 
 // --- 2. AUTHENTICATION (JWT) ---
 builder.Services.AddAuthentication(options =>
@@ -52,7 +57,8 @@ builder.Services.AddAuthentication(options =>
 
 // --- 3. CUSTOM SERVICES ---
 builder.Services.AddScoped<ITmdbService, TmdbService>();
-builder.Services.AddScoped<ITokenService, TokenService>(); // Register the Token Service
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 // --- 4. CORS ---
 builder.Services.AddCors(options =>
@@ -68,6 +74,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -78,9 +85,8 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowReactApp");
 
-// --- 5. MIDDLEWARE ORDER IS CRITICAL ---
-app.UseAuthentication(); // 1. Check who they are
-app.UseAuthorization();  // 2. Check what they can do
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 
