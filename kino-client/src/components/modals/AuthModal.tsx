@@ -1,12 +1,10 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import api from '../../api/axios';
 
-// Expand local type to include VERIFY
 type ViewState = 'LOGIN' | 'REGISTER' | 'VERIFY';
 
 export const AuthModal = () => {
-    // 1. Get modalView from context
     const { isModalOpen, modalView, closeModal, login } = useContext(AuthContext)!;
     const [view, setView] = useState<ViewState>('LOGIN');
     
@@ -14,26 +12,58 @@ export const AuthModal = () => {
     const [email, setEmail] = useState('');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [code, setCode] = useState('');
     const [userId, setUserId] = useState<string | null>(null);
     
+    // UI State
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // 2. Sync local state with context when opening
+    // --- OTP LOGIC ---
+    const [otp, setOtp] = useState(['', '', '', '', '', '']);
+    const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
     useEffect(() => {
         if (isModalOpen) {
-            setView(modalView); // Set to 'LOGIN' or 'REGISTER' based on what was clicked
+            setView(modalView); 
             setError('');
-            setCode('');
+            setOtp(['', '', '', '', '', '']); 
+            if (!userId) {
+                setUsername('');
+                setPassword('');
+                setEmail('');
+            }
         }
-    }, [isModalOpen, modalView]);
+    }, [isModalOpen, modalView]); 
 
-    if (!isModalOpen) return null;
+    const handleOtpChange = (index: number, value: string) => {
+        if (loading) return; // Block input if loading
+        if (isNaN(Number(value))) return; 
+        const newOtp = [...otp];
+        newOtp[index] = value.substring(value.length - 1); 
+        setOtp(newOtp);
+        if (value && index < 5) otpRefs.current[index + 1]?.focus();
+    };
 
-    // ... (Keep handleLogin, handleRegister, handleVerify exactly as they were) ...
-    // For brevity, assuming you kept the handlers the same.
-    
+    const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+        if (loading) return;
+        if (e.key === 'Backspace' && !otp[index] && index > 0) {
+            otpRefs.current[index - 1]?.focus();
+        }
+    };
+
+    const handleOtpPaste = (e: React.ClipboardEvent) => {
+        if (loading) return;
+        e.preventDefault();
+        const data = e.clipboardData.getData('text').slice(0, 6).split('');
+        if (data.every(char => !isNaN(Number(char)))) {
+            const newOtp = [...otp];
+            data.forEach((char, i) => { if (i < 6) newOtp[i] = char; });
+            setOtp(newOtp);
+            otpRefs.current[Math.min(data.length, 5)]?.focus();
+        }
+    };
+
+    // --- API HANDLERS ---
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -42,7 +72,8 @@ export const AuthModal = () => {
             const res = await api.post('/auth/login', { username, password });
             login(res.data.token);
         } catch (err: any) {
-            setError('Invalid credentials.');
+            const data = err.response?.data;
+            setError(typeof data === 'string' ? data : (data?.message || 'Invalid credentials.'));
         } finally {
             setLoading(false);
         }
@@ -54,10 +85,17 @@ export const AuthModal = () => {
         setError('');
         try {
             const res = await api.post('/auth/register', { username, email, password });
-            setUserId(res.data.userId); 
+            const newUserId = res.data.userId || res.data.UserId;
+            setUserId(newUserId); 
             setView('VERIFY');
         } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to register.');
+            const data = err.response?.data;
+            let msg = 'Failed to register.';
+            if (typeof data === 'string') msg = data;
+            else if (data?.message) msg = data.message;
+            else if (Array.isArray(data)) msg = data.map((e: any) => e.description).join(' ');
+            else if (data?.errors) { const k = Object.keys(data.errors)[0]; msg = `${k}: ${data.errors[k][0]}`; }
+            setError(msg);
         } finally {
             setLoading(false);
         }
@@ -65,6 +103,9 @@ export const AuthModal = () => {
 
     const handleVerify = async (e: React.FormEvent) => {
         e.preventDefault();
+        const code = otp.join('');
+        if (code.length !== 6) { setError('Please enter the full 6-digit code.'); return; }
+        
         setLoading(true);
         setError('');
         try {
@@ -72,79 +113,149 @@ export const AuthModal = () => {
             const loginRes = await api.post('/auth/login', { username, password });
             login(loginRes.data.token);
         } catch (err: any) {
-            setError('Invalid code.');
+            const msg = err.response?.data;
+            setError(typeof msg === 'string' ? msg : 'Invalid code.');
         } finally {
             setLoading(false);
         }
     };
 
+    if (!isModalOpen) return null;
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-rose-900/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden p-8">
-                {/* 3. Close Icon: Simple SVG Outline */}
-                <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={loading ? undefined : closeModal} />
+
+            <div className="relative w-full max-w-md bg-white/80 backdrop-blur-xl border border-white/40 shadow-2xl rounded-[2rem] overflow-hidden p-8 animate-in zoom-in-95 duration-200">
+                <div className="absolute -top-20 -right-20 w-60 h-60 bg-rose-400/20 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none" />
+
+                {/* FIX 1: Z-Index 50 ensures this is always clickable 
+                   Added disabled state to prevent closing while submitting
+                */}
+                <button 
+                    onClick={closeModal} 
+                    disabled={loading}
+                    className="absolute top-6 right-6 z-50 p-2 rounded-full hover:bg-black/5 transition-colors text-slate-400 hover:text-rose-500 disabled:opacity-0"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
 
-                <div className="text-center mb-8">
+                <div className="text-center mb-8 relative z-10">
                     <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
-                        {view === 'LOGIN' && 'Welcome'}
-                        {view === 'REGISTER' && 'Join Kino'}
-                        {view === 'VERIFY' && 'Check Email'}
+                        {view === 'LOGIN' && 'Welcome Back'}
+                        {view === 'REGISTER' && 'Create Account'}
+                        {view === 'VERIFY' && 'Verify Email'}
                     </h2>
-                    <p className="text-xs font-bold text-rose-400 tracking-widest mt-1">
-                        {view === 'VERIFY' ? `Sent to ${email}` : 'Temporary Tagline'}
+                    <p className="text-xs font-bold text-rose-500 tracking-[0.2em] uppercase mt-2 opacity-80">
+                        {view === 'VERIFY' ? `Code sent to ${email}` : 'The Movie Diary'}
                     </p>
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-2 bg-red-50 text-red-500 text-xs text-center rounded-lg font-medium border border-red-100">
+                    <div className="mb-6 p-3 bg-rose-50/80 backdrop-blur-sm text-rose-600 text-xs text-center rounded-xl font-semibold border border-rose-100 animate-in slide-in-from-top-2">
                         {error}
                     </div>
                 )}
 
-                {/* --- FORMS (Same logic, slightly cleaner inputs) --- */}
                 {view === 'LOGIN' && (
-                    <form onSubmit={handleLogin} className="space-y-4">
-                        <div className="space-y-3">
-                            <input placeholder="Username" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none transition-all" value={username} onChange={e => setUsername(e.target.value)} />
-                            <input type="password" placeholder="Password" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none transition-all" value={password} onChange={e => setPassword(e.target.value)} />
+                    <form onSubmit={handleLogin} className="space-y-4 relative z-10" autoComplete="off">
+                        <div className="space-y-4">
+                            <InputGroup disabled={loading} name="kino_username" type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                            <InputGroup disabled={loading} name="kino_password" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
                         </div>
-                        <button disabled={loading} className="w-full bg-slate-900 hover:bg-black text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-slate-200 mt-2">
-                            {loading ? '...' : 'Sign In'}
-                        </button>
-                        <p className="text-center text-xs text-slate-400 mt-4 cursor-pointer hover:text-rose-500" onClick={() => setView('REGISTER')}>New? Create account</p>
+                        <SubmitButton loading={loading} label="Sign In" />
+                        <FooterLink disabled={loading} text="New here? Create account" onClick={() => setView('REGISTER')} />
                     </form>
                 )}
 
                 {view === 'REGISTER' && (
-                    <form onSubmit={handleRegister} className="space-y-4">
-                        <div className="space-y-3">
-                            <input placeholder="Username" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none transition-all" value={username} onChange={e => setUsername(e.target.value)} />
-                            <input type="email" placeholder="Email" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none transition-all" value={email} onChange={e => setEmail(e.target.value)} />
-                            <input type="password" placeholder="Password" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none transition-all" value={password} onChange={e => setPassword(e.target.value)} />
+                    <form onSubmit={handleRegister} className="space-y-4 relative z-10" autoComplete="off">
+                        <div className="space-y-4">
+                            <InputGroup disabled={loading} name="kino_reg_username" type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+                            <InputGroup disabled={loading} name="kino_reg_email" type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} />
+                            <InputGroup disabled={loading} name="kino_reg_password" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
                         </div>
-                        <button disabled={loading} className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-rose-200 mt-2">
-                            {loading ? '...' : 'Sign Up'}
-                        </button>
-                        <p className="text-center text-xs text-slate-400 mt-4 cursor-pointer hover:text-rose-500" onClick={() => setView('LOGIN')}>Have an account?</p>
+                        <SubmitButton loading={loading} label="Create Account" />
+                        <FooterLink disabled={loading} text="Already have an account? Sign in" onClick={() => setView('LOGIN')} />
                     </form>
                 )}
 
                 {view === 'VERIFY' && (
-                    <form onSubmit={handleVerify} className="space-y-4">
-                        <div className="flex justify-center">
-                            <input placeholder="000000" className="w-2/3 text-center text-2xl tracking-widest font-mono bg-slate-50 border border-slate-200 rounded-xl py-3 focus:ring-2 focus:ring-rose-100 focus:border-rose-300 outline-none text-slate-700" value={code} onChange={e => setCode(e.target.value)} />
+                    <form onSubmit={handleVerify} className="space-y-8 relative z-10" autoComplete="off">
+                        <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
+                            {otp.map((digit, i) => (
+                                <input
+                                    key={i}
+                                    disabled={loading}
+                                    ref={el => { otpRefs.current[i] = el }}
+                                    type="text"
+                                    maxLength={1}
+                                    value={digit}
+                                    onChange={e => handleOtpChange(i, e.target.value)}
+                                    onKeyDown={e => handleOtpKeyDown(i, e)}
+                                    className="w-12 h-14 text-center text-2xl font-bold bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-400 focus:border-transparent outline-none transition-all shadow-sm text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                            ))}
                         </div>
-                        <button disabled={loading} className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-rose-200">
-                            {loading ? 'Verifying...' : 'Confirm'}
-                        </button>
-                        <p className="text-center text-xs text-slate-400 mt-4 cursor-pointer hover:text-rose-500" onClick={() => setView('REGISTER')}>Wrong email? Back</p>
+                        <SubmitButton loading={loading} label="Verify & Login" />
+                        <FooterLink disabled={loading} text="Wrong email? Go back" onClick={() => setView('REGISTER')} />
                     </form>
                 )}
             </div>
         </div>
     );
 };
+
+// --- SUB-COMPONENTS ---
+
+interface InputGroupProps {
+    type: string;
+    placeholder: string;
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    name: string;
+    disabled?: boolean;
+}
+
+const InputGroup = ({ type, placeholder, value, onChange, name, disabled }: InputGroupProps) => (
+    <div className="relative group">
+        <input 
+            name={name}
+            type={type}
+            disabled={disabled}
+            placeholder=" " 
+            autoComplete={type === 'password' ? 'new-password' : 'off'}
+            className="peer w-full bg-white/50 border border-slate-200 rounded-xl px-4 pt-6 pb-2 text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400/50 focus:border-rose-400 transition-all shadow-sm group-hover:bg-white/80 disabled:opacity-60 disabled:cursor-not-allowed" 
+            value={value} 
+            onChange={onChange} 
+        />
+        {/* FIX 2: Removed 'uppercase' and 'peer-placeholder-shown:capitalize'. 
+            It is now consistent text that simply moves up/down. */}
+        <label className="absolute left-4 top-4 text-xs font-bold text-slate-400 transition-all pointer-events-none 
+            peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-placeholder-shown:text-slate-400 
+            peer-focus:top-1.5 peer-focus:text-[10px] peer-focus:text-rose-500 
+            peer-[&:not(:placeholder-shown)]:top-1.5 peer-[&:not(:placeholder-shown)]:text-[10px] peer-[&:not(:placeholder-shown)]:text-rose-500">
+            {placeholder}
+        </label>
+    </div>
+);
+
+const SubmitButton = ({ loading, label }: { loading: boolean, label: string }) => (
+    <button disabled={loading} className="w-full bg-slate-900 hover:bg-black text-white font-bold py-4 rounded-xl transition-all transform active:scale-[0.98] shadow-lg shadow-slate-200/50 disabled:opacity-70 disabled:cursor-not-allowed">
+        {loading ? (
+            <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Processing...
+            </span>
+        ) : label}
+    </button>
+);
+
+const FooterLink = ({ text, onClick, disabled }: { text: string, onClick: () => void, disabled?: boolean }) => (
+    <p className={`text-center text-xs font-semibold text-slate-400 mt-4 transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:text-rose-500'}`} onClick={disabled ? undefined : onClick}>
+        {text}
+    </p>
+);

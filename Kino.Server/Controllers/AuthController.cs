@@ -26,38 +26,67 @@ namespace Kino.Server.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto request)
         {
-            // 1. Check if user exists
-            var userExists = await _userManager.FindByNameAsync(request.Username);
-            if (userExists != null) return BadRequest("Username already taken");
+            // --- 1. DETECT AND PURGE ZOMBIE USERS ---
+            
+            // Check Username
+            var existingUser = await _userManager.FindByNameAsync(request.Username);
+            if (existingUser != null)
+            {
+                if (!await _userManager.IsEmailConfirmedAsync(existingUser))
+                {
+                    // Found a Zombie! (Exists but not verified). Delete it.
+                    await _userManager.DeleteAsync(existingUser);
+                }
+                else
+                {
+                    return BadRequest($"Username '{request.Username}' is already taken.");
+                }
+            }
 
-            var emailExists = await _userManager.FindByEmailAsync(request.Email);
-            if (emailExists != null) return BadRequest("Email already registered");
+            // Check Email
+            var existingEmail = await _userManager.FindByEmailAsync(request.Email);
+            if (existingEmail != null)
+            {
+                if (!await _userManager.IsEmailConfirmedAsync(existingEmail))
+                {
+                    // Found a Zombie Email! Delete it.
+                    await _userManager.DeleteAsync(existingEmail);
+                }
+                else
+                {
+                    return BadRequest($"Email '{request.Email}' is already in use.");
+                }
+            }
 
-            // 2. Create User
+            // --- 2. CREATE NEW USER ---
             var user = new IdentityUser { UserName = request.Username, Email = request.Email };
             var result = await _userManager.CreateAsync(user, request.Password);
 
             if (result.Succeeded)
             {
-                // Wrap Email Sending in Try/Catch to prevent 500 Crashes
                 try 
                 {
+                    // --- 3. SEND EMAIL ---
                     var emailSent = await SendVerificationEmail(user);
+                    
                     if (!emailSent)
                     {
-                        // Verify this string is what you see in the frontend now
-                        return StatusCode(500, "User created, but Email Service failed (Check App Password/Connection).");
+                        // ROLLBACK: If email fails, delete the user immediately so we don't create a new Zombie.
+                        await _userManager.DeleteAsync(user);
+                        return StatusCode(500, "Email failed to send. Please check App Password. User deleted - try again.");
                     }
+
+                    return Ok(new { message = "Registration successful! Verification code sent.", userId = user.Id });
                 }
                 catch (Exception ex)
                 {
-                    // This catches SMTP crashes (e.g., bad password, firewall)
-                    return StatusCode(500, $"Email System Error: {ex.Message}");
+                    // CRASH ROLLBACK
+                    await _userManager.DeleteAsync(user);
+                    return StatusCode(500, $"Email System Crash: {ex.Message}");
                 }
-
-                return Ok(new { message = "Registration successful! Please check your email.", userId = user.Id });
             }
 
+            // Return detailed validation errors (e.g., Password too short)
             return BadRequest(result.Errors);
         }
 
@@ -71,25 +100,10 @@ namespace Kino.Server.Controllers
 
             if (result.Succeeded)
             {
-                return Ok(new { message = "Email confirmed successfully! You can now login." });
+                return Ok(new { message = "Email confirmed! Logging you in..." });
             }
 
-            return BadRequest("Error confirming email. The token might be invalid or expired.");
-        }
-
-        [HttpPost("resend-verification")]
-        public async Task<IActionResult> ResendVerification([FromBody] string email)
-        {
-            var user = await _userManager.FindByEmailAsync(email);
-            if (user == null) return BadRequest("User not found.");
-
-            if (await _userManager.IsEmailConfirmedAsync(user))
-                return BadRequest("Email is already verified.");
-
-            var sent = await SendVerificationEmail(user);
-            if (!sent) return StatusCode(500, "Failed to send email.");
-
-            return Ok("Verification email sent.");
+            return BadRequest("Invalid or expired verification code.");
         }
 
         [HttpPost("login")]
@@ -98,10 +112,10 @@ namespace Kino.Server.Controllers
             var user = await _userManager.FindByNameAsync(request.Username);
             if (user == null) return Unauthorized("Invalid username or password.");
 
-            // Enforce Email Verification
+            // This check is now safe to keep because we fixed the Registration flow!
             if (!await _userManager.IsEmailConfirmedAsync(user))
             {
-                return Unauthorized("Please confirm your email address before logging in.");
+                return Unauthorized("Please check your email for the verification code.");
             }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, false);
@@ -118,44 +132,56 @@ namespace Kino.Server.Controllers
             });
         }
 
-        // --- Helper Method to Send Nice Emails ---
-        // Returns bool so we know if it worked
         private async Task<bool> SendVerificationEmail(IdentityUser user)
         {
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            // THEME: Girlsy Minimalism (Pink/Rose/White)
+            // PREMIUM HTML EMAIL TEMPLATE
             var emailBody = $@"
-            <div style='font-family: ""Helvetica Neue"", Helvetica, Arial, sans-serif; background-color: #fff1f2; padding: 40px 0;'>
-                <div style='max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 40px rgba(251, 113, 133, 0.15);'>
-                    
-                    <div style='background: linear-gradient(to bottom, #fdf2f8, #ffffff); padding: 40px 20px 20px 20px; text-align: center;'>
-                        <h1 style='margin: 0; font-family: ""Georgia"", serif; color: #be185d; font-size: 42px; letter-spacing: -2px; font-weight: 900;'>kino.</h1>
-                        <p style='color: #db2777; font-size: 10px; text-transform: uppercase; letter-spacing: 3px; margin-top: 5px; font-weight: bold;'>The Movie Diary</p>
-                    </div>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='utf-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                <style>
+                    /* Reset */
+                    body {{ margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }}
+                    .container {{ width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.05); margin-top: 40px; margin-bottom: 40px; border: 1px solid #e2e8f0; }}
+                    .header {{ background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%); padding: 40px 0; text-align: center; border-bottom: 1px solid #f1f5f9; }}
+                    .content {{ padding: 40px 48px; text-align: center; }}
+                    .code-box {{ background-color: #fff1f2; color: #be185d; font-size: 32px; letter-spacing: 8px; font-weight: bold; padding: 24px; border-radius: 16px; margin: 32px 0; border: 2px dashed #fbcfe8; display: inline-block; font-family: 'Courier New', monospace; }}
+                    .footer {{ background-color: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; }}
+                    .btn {{ display: inline-block; padding: 12px 24px; background-color: #be185d; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px; }}
+                    h1 {{ color: #0f172a; font-size: 24px; margin: 0 0 16px 0; letter-spacing: -0.5px; }}
+                    p {{ color: #475569; font-size: 16px; line-height: 1.6; margin: 0; }}
+                </style>
+            </head>
+            <body>
+                <div style='background-color: #f1f5f9; padding: 20px;'>
+                    <div class='container'>
+                        <div class='header'>
+                            <h2 style='margin:0; font-family: Georgia, serif; color: #be185d; font-size: 36px; letter-spacing: -1px;'>kino.</h2>
+                            <p style='color: #be185d; font-size: 11px; text-transform: uppercase; letter-spacing: 3px; margin-top: 8px; font-weight: 700; opacity: 0.8;'>The Movie Diary</p>
+                        </div>
 
-                    <div style='padding: 20px 40px 50px 40px; text-align: center; color: #334155;'>
-                        <p style='font-size: 18px; margin-bottom: 10px; font-weight: 700; color: #1e293b;'>Hi, {user.UserName}</p>
-                        <p style='font-size: 15px; line-height: 1.6; color: #64748b; margin-bottom: 30px;'>
-                            Your screening is about to start. Please copy the verification code below to activate your account.
-                        </p>
-                        
-                        <div style='background-color: #fff0f5; border: 2px dashed #fbcfe8; border-radius: 16px; padding: 25px; margin: 0 auto;'>
-                            <span style='display: block; font-size: 10px; color: #be185d; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; font-weight: bold;'>Verification Token</span>
-                            <code style='font-family: ""Courier New"", monospace; display: block; font-size: 18px; color: #9d174d; word-break: break-all; line-height: 1.4; font-weight: bold;'>
-                                {token}
-                            </code>
+                        <div class='content'>
+                            <h1>Verify your email</h1>
+                            <p>Welcome to Kino, <strong>{user.UserName}</strong>.<br>Enter this code to start logging your films.</p>
+                            
+                            <div class='code-box'>{token}</div>
+                            
+                            <p style='font-size: 14px; color: #94a3b8;'>This code will expire in 10 minutes.<br>If you didn't request this, you can safely ignore this email.</p>
+                        </div>
+
+                        <div class='footer'>
+                            <p>&copy; 2026 Kino App. All rights reserved.</p>
                         </div>
                     </div>
                 </div>
-                
-                <div style='text-align: center; margin-top: 30px;'>
-                    <p style='margin: 0; font-size: 12px; color: #fb7185; letter-spacing: 1px; font-weight: 600;'>DEVELOPED BY 2XE2IPI</p>
-                </div>
-            </div>";
+            </body>
+            </html>";
 
-            // Return the result of the email send
-            return await _emailService.SendEmailAsync(user.Email!, "Your Kino Ticket", emailBody);
+            return await _emailService.SendEmailAsync(user.Email!, "Your Kino Verification Code", emailBody);
         }
     }
 }
