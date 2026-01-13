@@ -1,7 +1,10 @@
+using System.Text;
 using Kino.Server.Data;
 using Kino.Server.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,29 +12,49 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
-// --- DATABASE & IDENTITY CONFIGURATION ---
+// --- 1. DB & IDENTITY ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// Add Identity (User/Role management)
 builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => 
 {
     options.User.RequireUniqueEmail = true;
-    options.Password.RequireDigit = false; // Easier for testing
+    options.Password.RequireDigit = false;
     options.Password.RequiredLength = 6;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequireUppercase = false;
 })
-.AddEntityFrameworkStores<AppDbContext>();
-// ----------------------------------------
+.AddEntityFrameworkStores<AppDbContext>()
+.AddDefaultTokenProviders(); // Required for email tokens later
 
-// --- CUSTOM SERVICES ---
+// --- 2. AUTHENTICATION (JWT) ---
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+    };
+});
+
+// --- 3. CUSTOM SERVICES ---
 builder.Services.AddScoped<ITmdbService, TmdbService>();
-// -----------------------
+builder.Services.AddScoped<ITokenService, TokenService>(); // Register the Token Service
 
-// --- CORS POLICY ---
+// --- 4. CORS ---
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp",
@@ -55,9 +78,9 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowReactApp");
 
-// Must be in this order!
-app.UseAuthentication(); // Who are you?
-app.UseAuthorization();  // What are you allowed to do?
+// --- 5. MIDDLEWARE ORDER IS CRITICAL ---
+app.UseAuthentication(); // 1. Check who they are
+app.UseAuthorization();  // 2. Check what they can do
 
 app.MapControllers();
 
