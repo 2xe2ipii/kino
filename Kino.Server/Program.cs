@@ -5,8 +5,29 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using DotNetEnv;
+
+Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (File.Exists(".env")) 
+{
+    // Database
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = Environment.GetEnvironmentVariable("DATABASE_URL");
+    
+    // TMDB
+    builder.Configuration["Tmdb:ApiKey"] = Environment.GetEnvironmentVariable("TMDB_API_KEY");
+    
+    // JWT
+    builder.Configuration["Jwt:Key"] = Environment.GetEnvironmentVariable("JWT_KEY");
+    builder.Configuration["Jwt:Issuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER");
+    builder.Configuration["Jwt:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
+
+    // Email
+    builder.Configuration["Gmail:Email"] = Environment.GetEnvironmentVariable("GMAIL_EMAIL");
+    builder.Configuration["Gmail:Password"] = Environment.GetEnvironmentVariable("GMAIL_PASSWORD");
+}
 
 // Add services to the container.
 builder.Services.AddControllers();
