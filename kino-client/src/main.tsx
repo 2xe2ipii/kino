@@ -1,13 +1,13 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-import { AuthProvider } from './context/AuthContext.tsx' // Import this
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
+import { AuthProvider } from './context/AuthContext'; // <--- This was missing
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <AuthProvider> {/* Wrap App in AuthProvider */}
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <AuthProvider>  {/* <--- Wraps the App so context works */}
       <App />
     </AuthProvider>
-  </StrictMode>,
-)
+  </React.StrictMode>,
+);

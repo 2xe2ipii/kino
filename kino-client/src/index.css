@@ -1,1 +1,33 @@
 @import "tailwindcss";
+
+@theme {
+  --color-brand-white: #ffffff;
+  --color-brand-soft: #fdf2f8; 
+  --color-brand-accent: #be185d;
+  
+  /* Add animation definitions directly to the theme configuration */
+  --animate-blob: blob 7s infinite;
+  
+  @keyframes blob {
+    0% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.9); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+}
+
+body {
+  background-color: var(--color-brand-soft);
+  color: #334155;
+  font-family: 'Inter', system-ui, sans-serif; /* Clean, modern base */
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; /* Prevent scroll from blobs */
+}
+
+/* Custom Glass Utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}

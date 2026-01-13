@@ -1,19 +1,21 @@
-import { createContext, useEffect, useState, type ReactNode } from 'react';
-import { jwtDecode } from 'jwt-decode';
-import axios from 'axios';
+// Change this line:
+import { createContext, useState, useEffect, type ReactNode } from 'react'; // Added 'type' keyword
 
-// Define what a "User" looks like in our frontend
+// ... (Rest of the file remains exactly the same as the previous correct version)
 interface User {
     sub: string;
-    email: string;
+    jti: string;
 }
 
 interface AuthContextType {
     user: User | null;
     token: string | null;
+    isAuthenticated: boolean;
     login: (token: string) => void;
     logout: () => void;
-    isAuthenticated: boolean;
+    isModalOpen: boolean;
+    openModal: () => void;
+    closeModal: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,20 +23,14 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         if (token) {
             try {
-                const decoded: any = jwtDecode(token);
-                // Check if token is expired
-                if (decoded.exp * 1000 < Date.now()) {
-                    logout();
-                } else {
-                    setUser({ sub: decoded.given_name, email: decoded.email }); 
-                    // Set the global header so axios uses it automatically
-                    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-                }
-            } catch (error) {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                setUser({ sub: payload.sub, jti: payload.jti });
+            } catch (e) {
                 logout();
             }
         }
@@ -43,17 +39,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const login = (newToken: string) => {
         localStorage.setItem('token', newToken);
         setToken(newToken);
+        setIsModalOpen(false);
     };
 
     const logout = () => {
         localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization']; // Cleanup header
         setToken(null);
         setUser(null);
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ 
+            user, token, isAuthenticated: !!token, login, logout, 
+            isModalOpen, 
+            openModal: () => setIsModalOpen(true), 
+            closeModal: () => setIsModalOpen(false) 
+        }}>
             {children}
         </AuthContext.Provider>
     );

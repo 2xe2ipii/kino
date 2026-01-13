@@ -1,49 +1,90 @@
 import { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
+import { AuthLayout } from '../components/layout/AuthLayout';
 
 const Login = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    
     const { login } = useContext(AuthContext)!;
     const navigate = useNavigate();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setIsLoading(true);
         try {
             const response = await api.post('/auth/login', { username, password });
             login(response.data.token);
             navigate('/'); 
         } catch (err: any) {
-            setError('Invalid username or password');
+            setError('Invalid credentials.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
-            <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
-                <h2 className="text-3xl font-bold mb-6 text-center text-blue-500">Kino</h2>
-                {error && <div className="bg-red-500 text-white p-2 rounded mb-4 text-center">{error}</div>}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400">Username</label>
-                        <input type="text" className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
-                            value={username} onChange={(e) => setUsername(e.target.value)} />
+        <AuthLayout 
+            title="Sign In" 
+            subtitle="Curate your digital cinema"
+        >
+            {error && (
+                <div className="mb-6 p-3 bg-red-50/50 backdrop-blur-sm border border-red-100 text-red-600 text-sm rounded-lg text-center">
+                    {error}
+                </div>
+            )}
+            
+            <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="space-y-1">
+                    <input 
+                        type="text" 
+                        required
+                        className="w-full px-5 py-4 bg-white/50 border border-white/60 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-200 focus:bg-white/80 transition-all text-slate-700 placeholder-slate-400 text-sm font-medium shadow-sm"
+                        placeholder="Username"
+                        value={username} 
+                        onChange={(e) => setUsername(e.target.value)} 
+                    />
+                </div>
+
+                <div className="space-y-1">
+                    <input 
+                        type="password" 
+                        required
+                        className="w-full px-5 py-4 bg-white/50 border border-white/60 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-200 focus:bg-white/80 transition-all text-slate-700 placeholder-slate-400 text-sm font-medium shadow-sm"
+                        placeholder="Password"
+                        value={password} 
+                        onChange={(e) => setPassword(e.target.value)} 
+                    />
+                    <div className="flex justify-end pt-2">
+                        <a href="#" className="text-xs text-rose-500/80 hover:text-rose-600 font-semibold transition-colors">
+                            Forgot password?
+                        </a>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400">Password</label>
-                        <input type="password" className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
-                            value={password} onChange={(e) => setPassword(e.target.value)} />
-                    </div>
-                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-200">
-                        Sign In
-                    </button>
-                </form>
+                </div>
+
+                <button 
+                    type="submit" 
+                    disabled={isLoading}
+                    className="w-full py-4 mt-4 bg-gradient-to-r from-rose-400 to-pink-500 hover:from-rose-500 hover:to-pink-600 text-white font-bold rounded-2xl shadow-lg shadow-pink-300/40 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                    {isLoading ? 'Signing In...' : 'Login'}
+                </button>
+            </form>
+
+            <div className="mt-8 text-center">
+                <p className="text-sm text-slate-500">
+                    New here?{' '}
+                    <Link to="/register" className="text-rose-500 font-bold hover:underline decoration-2 underline-offset-2">
+                        Create Account
+                    </Link>
+                </p>
             </div>
-        </div>
+        </AuthLayout>
     );
 };
 
