@@ -39,7 +39,16 @@ namespace Kino.Server.Controllers
 
             if (result.Succeeded)
             {
-                await SendVerificationEmail(user);
+                // 3. Send Email and CHECK if it succeeded
+                var emailSent = await SendVerificationEmail(user);
+                
+                if (!emailSent)
+                {
+                    // Optional: Delete user if email fails so they can try again with a valid email/connection
+                    // await _userManager.DeleteAsync(user); 
+                    return StatusCode(500, "Account created, but failed to send verification email. Please check your email settings or try again.");
+                }
+
                 return Ok(new { message = "Registration successful! Please check your email for the verification code.", userId = user.Id });
             }
 
@@ -71,7 +80,9 @@ namespace Kino.Server.Controllers
             if (await _userManager.IsEmailConfirmedAsync(user))
                 return BadRequest("Email is already verified.");
 
-            await SendVerificationEmail(user);
+            var sent = await SendVerificationEmail(user);
+            if (!sent) return StatusCode(500, "Failed to send email.");
+
             return Ok("Verification email sent.");
         }
 
@@ -102,32 +113,43 @@ namespace Kino.Server.Controllers
         }
 
         // --- Helper Method to Send Nice Emails ---
-        private async Task SendVerificationEmail(IdentityUser user)
+        // Returns bool so we know if it worked
+        private async Task<bool> SendVerificationEmail(IdentityUser user)
         {
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
 
-            // A cleaner HTML email template
+            // THEME: Girlsy Minimalism (Pink/Rose/White)
             var emailBody = $@"
-                <div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;'>
-                    <div style='background-color: #1a1a1a; color: #ffffff; padding: 20px; text-align: center;'>
-                        <h1 style='margin: 0;'>Welcome to Kino</h1>
+            <div style='font-family: ""Helvetica Neue"", Helvetica, Arial, sans-serif; background-color: #fff1f2; padding: 40px 0;'>
+                <div style='max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 40px rgba(251, 113, 133, 0.15);'>
+                    
+                    <div style='background: linear-gradient(to bottom, #fdf2f8, #ffffff); padding: 40px 20px 20px 20px; text-align: center;'>
+                        <h1 style='margin: 0; font-family: ""Georgia"", serif; color: #be185d; font-size: 42px; letter-spacing: -2px; font-weight: 900;'>kino.</h1>
+                        <p style='color: #db2777; font-size: 10px; text-transform: uppercase; letter-spacing: 3px; margin-top: 5px; font-weight: bold;'>The Movie Diary</p>
                     </div>
-                    <div style='padding: 30px; background-color: #ffffff; color: #333333;'>
-                        <p style='font-size: 16px;'>Hi <strong>{user.UserName}</strong>,</p>
-                        <p style='font-size: 16px;'>Thanks for joining Kino! To start logging your movies, please verify your email address using the code below:</p>
+
+                    <div style='padding: 20px 40px 50px 40px; text-align: center; color: #334155;'>
+                        <p style='font-size: 18px; margin-bottom: 10px; font-weight: 700; color: #1e293b;'>Hi, {user.UserName}</p>
+                        <p style='font-size: 15px; line-height: 1.6; color: #64748b; margin-bottom: 30px;'>
+                            Your screening is about to start. Please copy the verification code below to activate your account.
+                        </p>
                         
-                        <div style='background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;'>
-                            <code style='font-size: 24px; font-weight: bold; color: #1a1a1a; letter-spacing: 2px;'>{token}</code>
+                        <div style='background-color: #fff0f5; border: 2px dashed #fbcfe8; border-radius: 16px; padding: 25px; margin: 0 auto;'>
+                            <span style='display: block; font-size: 10px; color: #be185d; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; font-weight: bold;'>Verification Token</span>
+                            <code style='font-family: ""Courier New"", monospace; display: block; font-size: 18px; color: #9d174d; word-break: break-all; line-height: 1.4; font-weight: bold;'>
+                                {token}
+                            </code>
                         </div>
-
-                        <p style='font-size: 14px; color: #666;'>If you didn't create an account, you can safely ignore this email.</p>
                     </div>
-                    <div style='background-color: #f9f9f9; padding: 15px; text-align: center; font-size: 12px; color: #999;'>
-                        &copy; 2026 Kino App
-                    </div>
-                </div>";
+                </div>
+                
+                <div style='text-align: center; margin-top: 30px;'>
+                    <p style='margin: 0; font-size: 12px; color: #fb7185; letter-spacing: 1px; font-weight: 600;'>DEVELOPED BY 2XE2IPI</p>
+                </div>
+            </div>";
 
-            await _emailService.SendEmailAsync(user.Email!, "Verify your Kino Account", emailBody);
+            // Return the result of the email send
+            return await _emailService.SendEmailAsync(user.Email!, "Your Kino Ticket", emailBody);
         }
     }
 }

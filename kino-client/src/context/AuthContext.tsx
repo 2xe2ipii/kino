@@ -1,11 +1,11 @@
-// Change this line:
-import { createContext, useState, useEffect, type ReactNode } from 'react'; // Added 'type' keyword
+import { createContext, useState, useEffect, type ReactNode } from 'react';
 
-// ... (Rest of the file remains exactly the same as the previous correct version)
 interface User {
     sub: string;
     jti: string;
 }
+
+export type ModalView = 'LOGIN' | 'REGISTER';
 
 interface AuthContextType {
     user: User | null;
@@ -14,7 +14,8 @@ interface AuthContextType {
     login: (token: string) => void;
     logout: () => void;
     isModalOpen: boolean;
-    openModal: () => void;
+    modalView: ModalView; // Track which view to show
+    openModal: (view?: ModalView) => void; // Allow passing view
     closeModal: () => void;
 }
 
@@ -24,6 +25,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalView, setModalView] = useState<ModalView>('LOGIN');
 
     useEffect(() => {
         if (token) {
@@ -48,11 +50,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(null);
     };
 
+    const openModal = (view: ModalView = 'LOGIN') => {
+        setModalView(view);
+        setIsModalOpen(true);
+    };
+
     return (
         <AuthContext.Provider value={{ 
             user, token, isAuthenticated: !!token, login, logout, 
-            isModalOpen, 
-            openModal: () => setIsModalOpen(true), 
+            isModalOpen, modalView,
+            openModal, 
             closeModal: () => setIsModalOpen(false) 
         }}>
             {children}
