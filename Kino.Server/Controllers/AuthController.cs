@@ -39,17 +39,23 @@ namespace Kino.Server.Controllers
 
             if (result.Succeeded)
             {
-                // 3. Send Email and CHECK if it succeeded
-                var emailSent = await SendVerificationEmail(user);
-                
-                if (!emailSent)
+                // Wrap Email Sending in Try/Catch to prevent 500 Crashes
+                try 
                 {
-                    // Optional: Delete user if email fails so they can try again with a valid email/connection
-                    // await _userManager.DeleteAsync(user); 
-                    return StatusCode(500, "Account created, but failed to send verification email. Please check your email settings or try again.");
+                    var emailSent = await SendVerificationEmail(user);
+                    if (!emailSent)
+                    {
+                        // Verify this string is what you see in the frontend now
+                        return StatusCode(500, "User created, but Email Service failed (Check App Password/Connection).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // This catches SMTP crashes (e.g., bad password, firewall)
+                    return StatusCode(500, $"Email System Error: {ex.Message}");
                 }
 
-                return Ok(new { message = "Registration successful! Please check your email for the verification code.", userId = user.Id });
+                return Ok(new { message = "Registration successful! Please check your email.", userId = user.Id });
             }
 
             return BadRequest(result.Errors);

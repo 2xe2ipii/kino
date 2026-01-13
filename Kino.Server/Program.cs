@@ -18,10 +18,10 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173") // The Vite Port
+            policy.WithOrigins("http://localhost:5173") // <--- MUST MATCH CLIENT EXACTLY
                   .AllowAnyHeader()
                   .AllowAnyMethod()
-                  .AllowCredentials();
+                  .AllowCredentials(); // Important for cookies/auth headers
         });
 });
 
