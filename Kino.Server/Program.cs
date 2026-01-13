@@ -5,13 +5,16 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using DotNetEnv;
+using DotNetEnv; // <--- 1. IMPORTANT: Add this namespace
 
+// --- 2. IMPORTANT: Load the .env file immediately ---
 Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
-if (File.Exists(".env")) 
+// --- 3. IMPORTANT: Overwrite Config with .env values ---
+// This tells the app: "Don't use appsettings.json for these, use the .env file instead"
+if (File.Exists(".env"))
 {
     // Database
     builder.Configuration["ConnectionStrings:DefaultConnection"] = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -34,20 +37,20 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// --- 1. CORS (DEFINE THIS ONCE ONLY) ---
+// --- CORS ---
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173") // <--- MUST MATCH YOUR FRONTEND URL EXACTLY
+            policy.WithOrigins("http://localhost:5173")
                   .AllowAnyHeader()
                   .AllowAnyMethod()
-                  .AllowCredentials(); // <--- CRITICAL: This was missing in your second block
+                  .AllowCredentials();
         });
 });
 
-// --- 2. DB & IDENTITY ---
+// --- DB & IDENTITY ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -55,20 +58,17 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => 
 {
     options.User.RequireUniqueEmail = true;
-    
-    // Relaxed Password Settings for Dev
     options.Password.RequireDigit = false;
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequiredLength = 6;
-    
     options.Tokens.EmailConfirmationTokenProvider = TokenOptions.DefaultEmailProvider;
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders(); 
 
-// --- 3. AUTHENTICATION (JWT) ---
+// --- AUTHENTICATION (JWT) ---
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -86,20 +86,18 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
+            // Now this will read the LONG key from your .env
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
     };
 });
 
-// --- 4. CUSTOM SERVICES ---
+// --- CUSTOM SERVICES ---
 builder.Services.AddScoped<ITmdbService, TmdbService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 
-// (Removed the duplicate "AllowReactApp" CORS block that was here)
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -107,13 +105,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
-// --- APPLY CORS BEFORE AUTH ---
+app.UseStaticFiles();
 app.UseCors("AllowReactApp");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();

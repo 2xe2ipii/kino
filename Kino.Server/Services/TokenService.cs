@@ -14,33 +14,36 @@ namespace Kino.Server.Services
         public TokenService(IConfiguration config)
         {
             _config = config;
-            // We encode the secret key into bytes
-            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+            var secretKey = config["Jwt:Key"] ?? throw new ArgumentNullException("Jwt:Key is missing");
+            _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         }
 
         public string CreateToken(IdentityUser user)
         {
-            // 1. Claims: The data we want to hide inside the token
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Email, user.Email!),
-                new Claim(JwtRegisteredClaimNames.GivenName, user.UserName!)
+                // FIX 1: Put the USERNAME in the 'Sub' claim (so Frontend shows "Drex")
+                new Claim(JwtRegisteredClaimNames.Sub, user.UserName ?? "User"),
+                
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
+                
+                // FIX 2: Put the ID in 'NameIdentifier' (so Backend knows which DB row to update)
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            // 2. Credentials: The key used to sign the token
             var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
 
-            // 3. Configuration: Describe the token
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.Now.AddDays(7), // Token lasts for 7 days
+                Expires = DateTime.UtcNow.AddDays(7),
                 SigningCredentials = creds,
                 Issuer = _config["Jwt:Issuer"],
                 Audience = _config["Jwt:Audience"]
             };
 
-            // 4. Create the token
             var tokenHandler = new JwtSecurityTokenHandler();
             var token = tokenHandler.CreateToken(tokenDescriptor);
 

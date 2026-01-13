@@ -10,7 +10,7 @@ namespace Kino.Server.Services
 
         public TmdbService(IConfiguration config)
         {
-            _apiKey = config["Tmdb:ApiKey"]; // I will add this to appsettings.json soon
+            _apiKey = config["Tmdb:ApiKey"] ?? throw new ArgumentNullException("Tmdb:ApiKey is missing");
             _client = new RestClient("https://api.themoviedb.org/3/");
         }
 
@@ -20,6 +20,15 @@ namespace Kino.Server.Services
             request.AddQueryParameter("api_key", _apiKey);
             request.AddQueryParameter("query", query);
 
+            var response = await _client.GetAsync<TmdbSearchResponse>(request);
+            return response?.Results ?? new List<TmdbMovieResult>();
+        }
+
+        public async Task<List<TmdbMovieResult>> GetNowPlayingAsync()
+        {
+            var request = new RestRequest("movie/now_playing");
+            request.AddQueryParameter("api_key", _apiKey);
+            
             var response = await _client.GetAsync<TmdbSearchResponse>(request);
             return response?.Results ?? new List<TmdbMovieResult>();
         }

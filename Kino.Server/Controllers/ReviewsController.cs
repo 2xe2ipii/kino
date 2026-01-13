@@ -25,6 +25,10 @@ namespace Kino.Server.Controllers
         {
             // Get the User ID from the valid Token
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized("User ID claim is missing from token.");
+            }
 
             var movie = await _context.Movies.FirstOrDefaultAsync(m => m.TmdbId == dto.MovieId);
 

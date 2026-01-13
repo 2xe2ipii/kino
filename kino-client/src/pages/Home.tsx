@@ -21,15 +21,25 @@ const Home = () => {
     const [dropdownResults, setDropdownResults] = useState<TmdbMovie[]>([]); // Quick Dropdown Results
     const [loading, setLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
+    const [recentMovies, setRecentMovies] = useState<any[]>([]);
     
     // Modal States
     const [selectedMovie, setSelectedMovie] = useState<TmdbMovie | null>(null);
     const [isLogModalOpen, setIsLogModalOpen] = useState(false);
 
+    
+
     // Ref for clicking outside dropdown
     const searchRef = useRef<HTMLDivElement>(null);
 
     // --- EFFECTS ---
+
+    useEffect(() => {
+    // This fetches the movies when the page loads
+    api.get('/tmdb/now-playing')
+       .then(res => setRecentMovies(res.data.slice(0, 12))) // Top 12 movies
+       .catch(err => console.error("Failed to load Now Playing:", err));
+    }, []);
 
     // 1. Debounced Search for the Dropdown (Typeahead)
     useEffect(() => {
@@ -193,6 +203,48 @@ const Home = () => {
                         )}
                     </div>
                 </div>
+
+                {/* Only show Recent Movies if user is NOT searching */}
+                {/* Only show Recent Movies if user is NOT searching (i.e. results is empty) */}
+                {results.length === 0 && (
+                    <div className="mt-20">
+                        <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+                            <span className="bg-rose-500 w-2 h-8 rounded-full"></span>
+                            Now in Theaters
+                        </h2>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            {recentMovies.map((movie) => (
+                                <div 
+                                    key={movie.id} 
+                                    onClick={() => {
+                                        setSelectedMovie(movie);
+                                        setIsLogModalOpen(true); // <--- FIX: Correct function name
+                                    }}
+                                    className="group relative cursor-pointer"
+                                >
+                                    <div className="aspect-[2/3] rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
+                                        <img 
+                                            src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`} 
+                                            alt={movie.title}
+                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                        />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                                            <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all">
+                                                <span className="bg-white/20 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-bold border border-white/30">
+                                                    Log Film
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <h3 className="mt-2 text-sm font-bold text-slate-700 truncate group-hover:text-rose-500 transition-colors">
+                                        {movie.title}
+                                    </h3>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* --- MAIN GRID RESULTS (When Enter is Hit) --- */}
                 {results.length > 0 && (

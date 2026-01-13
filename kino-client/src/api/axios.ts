@@ -1,19 +1,25 @@
 import axios from 'axios';
 
+// Use the environment variable, or fallback to localhost for safety
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+
 const api = axios.create({
-    // Make sure this matches your Kino.Server port!
-    // If your backend says "Now listening on: http://localhost:5002", use that.
-    baseURL: 'http://localhost:5002/api', 
-    withCredentials: true // Important for CORS
+    baseURL: `${BASE_URL}/api` // Note: We append /api here
 });
 
-// Add Interceptor to attach Token
+// --- AUTOMATICALLY ATTACH TOKEN ---
 api.interceptors.request.use((config) => {
+    // 1. Get the token from localStorage
     const token = localStorage.getItem('token');
+    
+    // 2. If token exists, add it to the Authorization header
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
+    
     return config;
+}, (error) => {
+    return Promise.reject(error);
 });
 
 export default api;

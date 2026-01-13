@@ -206,11 +206,52 @@ namespace Kino.Server.Controllers
         }
 
         [Authorize]
+        [HttpPost("upload-avatar")]
+        public async Task<IActionResult> UploadAvatar([FromForm] IFormFile file)
+        {
+            if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
+
+            // FIX: Strictly look for NameIdentifier (which is now the ID)
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(userId)) return Unauthorized("User ID missing.");
+
+            // ... Folder/Saving logic (Keep your existing file saving code here) ...
+            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+            if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+            var ext = Path.GetExtension(file.FileName);
+            var filename = $"{userId}_{DateTime.UtcNow.Ticks}{ext}";
+            var filePath = Path.Combine(uploadsFolder, filename);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // DB Update
+            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+            if (profile == null)
+            {
+                profile = new UserProfile { UserId = userId };
+                _context.UserProfiles.Add(profile);
+            }
+
+            var fileUrl = $"/uploads/{filename}";
+            profile.AvatarUrl = fileUrl;
+            
+            await _context.SaveChangesAsync();
+            return Ok(new { url = fileUrl });
+        }
+
+        [Authorize]
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] UserProfileDto dto)
         {
+            // FIX: Strictly look for NameIdentifier
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+            
+            if (string.IsNullOrEmpty(userId)) return Unauthorized("User ID missing.");
 
             var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
 
@@ -220,21 +261,22 @@ namespace Kino.Server.Controllers
                 _context.UserProfiles.Add(profile);
             }
 
-            // Save the new fields
             profile.DisplayName = dto.DisplayName;
-            profile.AvatarUrl = dto.AvatarUrl;
             profile.Bio = dto.Bio;
-            profile.FavoriteMovie = dto.FavoriteMovie; // Keeping this in DB just in case
+            profile.AvatarUrl = dto.AvatarUrl; 
+            // Note: We don't overwrite FavoriteMovie here usually, unless you added it to the form
             
             await _context.SaveChangesAsync();
             return Ok(profile);
         }
+        
     }
-    public class UserProfileDto
-    {
-        public string DisplayName { get; set; } = string.Empty;
-        public string AvatarUrl { get; set; } = string.Empty;
-        public string Bio { get; set; } = string.Empty;
-        public string FavoriteMovie { get; set; } = string.Empty;
-    }
+
+     public class UserProfileDto
+        {
+            public string DisplayName { get; set; } = string.Empty;
+            public string AvatarUrl { get; set; } = string.Empty;
+            public string Bio { get; set; } = string.Empty;
+            public string FavoriteMovie { get; set; } = string.Empty;
+        }
 }

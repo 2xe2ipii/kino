@@ -1,16 +1,17 @@
 import { useContext } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom'; // <--- Import Link and useNavigate
+import { Link, useNavigate } from 'react-router-dom';
 
 export const Navbar = () => {
-    const { user, isAuthenticated, openModal, logout } = useContext(AuthContext)!;
+    // 1. Destructure all needed values from Context
+    const { user, userAvatar, isAuthenticated, openModal, logout } = useContext(AuthContext)!;
     const navigate = useNavigate();
 
     return (
         <nav className="fixed top-0 left-0 w-full z-40 px-6 py-4">
             <div className="max-w-7xl mx-auto bg-white/80 backdrop-blur-md border border-white/60 rounded-2xl shadow-sm px-6 py-3 flex justify-between items-center">
                 
-                {/* --- 1. CLICKABLE LOGO --- */}
+                {/* Logo Link */}
                 <Link to="/" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
                     <span className="text-2xl font-black text-rose-600 tracking-tighter select-none">kino.</span>
                 </Link>
@@ -19,19 +20,30 @@ export const Navbar = () => {
                 <div className="flex items-center gap-4">
                     {isAuthenticated ? (
                         <div className="flex items-center gap-4">
-                            {/* --- 2. LINK TO PROFILE --- */}
+                            
+                            {/* Profile Link Area */}
                             <div 
                                 onClick={() => navigate('/profile')} 
-                                className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity"
+                                className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                             >
                                 <span className="hidden md:block text-sm font-bold text-slate-600">
                                     {user?.sub}
                                 </span>
-                                {/* Simple User Icon SVG */}
-                                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                                    </svg>
+                                
+                                {/* Avatar Circle */}
+                                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-500 overflow-hidden border border-rose-200">
+                                    {userAvatar ? (
+                                        <img 
+                                            src={userAvatar} 
+                                            alt="Avatar" 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        // Fallback Initial
+                                        <span className="font-bold text-lg">
+                                            {user?.sub?.substring(0, 1).toUpperCase()}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
