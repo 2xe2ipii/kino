@@ -11,5 +11,6 @@ namespace Kino.Server.Data
 
         // this will tell EF Core to create a table named Movies based on the Movie class
         public DbSet<Movie> Movies { get; set; }
+        public DbSet<Review> Reviews { get; set; }
     }
 }
