@@ -18,11 +18,14 @@ namespace Kino.Server.Controllers
         public async Task<IActionResult> Search([FromQuery] string query)
         {
             if (string.IsNullOrWhiteSpace(query)) return BadRequest();
+            
             var results = await _tmdbService.SearchMoviesAsync(query);
-            return Ok(new { results }); 
+            
+            // FIX: Return 'results' directly (Array) instead of 'new { results }' (Object)
+            return Ok(results); 
         }
 
-        [HttpGet("now-playing")] // <--- The missing endpoint
+        [HttpGet("now-playing")]
         public async Task<IActionResult> GetNowPlaying()
         {
             var results = await _tmdbService.GetNowPlayingAsync();
