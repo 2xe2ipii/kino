@@ -1,10 +1,11 @@
-using System.Text.Json.Serialization; // <--- ADD THIS
+using System.Text.Json.Serialization;
 
 namespace Kino.Server.DTOs
 {
+    // Result of searching for a movie
     public class TmdbSearchResponse
     {
-        [JsonPropertyName("results")] // Matches TMDB JSON
+        [JsonPropertyName("results")]
         public List<TmdbMovieResult> Results { get; set; } = new();
     }
 
@@ -19,10 +20,10 @@ namespace Kino.Server.DTOs
         [JsonPropertyName("overview")]
         public string Overview { get; set; } = string.Empty;
 
-        [JsonPropertyName("release_date")] // Maps "release_date" <-> "Release_Date"
-        public string Release_Date { get; set; } = string.Empty;
+        [JsonPropertyName("release_date")]
+        public string Release_Date { get; set; } = string.Empty; // Now maps "release_date" <-> "Release_Date"
 
-        [JsonPropertyName("poster_path")] // Maps "poster_path" <-> "Poster_Path"
-        public string Poster_Path { get; set; } = string.Empty;
+        [JsonPropertyName("poster_path")]
+        public string Poster_Path { get; set; } = string.Empty; // Now maps "poster_path" <-> "Poster_Path"
     }
 }

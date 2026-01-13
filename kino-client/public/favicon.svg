@@ -1,0 +1,25 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ticketGradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fb7185" /> <stop offset="1" stop-color="#be123c" /> </linearGradient>
+    <filter id="shadow" x="-4" y="0" width="72" height="72" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#be123c" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <path fill="url(#ticketGradient)" 
+          d="M 8 8 
+             H 56 
+             V 26 
+             A 6 6 0 0 0 56 38 
+             V 56 
+             H 8 
+             V 38 
+             A 6 6 0 0 0 8 26 
+             V 8 
+             Z" />
+  </g>
+
+  <path d="M21 42V22H26L31 30L36 22H42L35 32L42 42H36L30 34L26 39V42H21Z" fill="white"/>
+</svg>
