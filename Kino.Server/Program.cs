@@ -5,30 +5,41 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using DotNetEnv; // <--- 1. IMPORTANT: Add this namespace
+using DotNetEnv; 
 
-// --- 2. IMPORTANT: Load the .env file immediately ---
+// 1. Load .env if it exists (for Localhost)
 Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- 3. IMPORTANT: Overwrite Config with .env values ---
-// This tells the app: "Don't use appsettings.json for these, use the .env file instead"
-if (File.Exists(".env"))
+// 2. CONFIGURATION MAPPING (Modified for Production)
+// We removed 'if (File.Exists)' so this runs on Render too.
+// We use '??' to keep existing values if the Env Var is missing (safety).
+
+var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+if (!string.IsNullOrEmpty(dbUrl)) 
 {
-    // Database
-    builder.Configuration["ConnectionStrings:DefaultConnection"] = Environment.GetEnvironmentVariable("DATABASE_URL");
-    
-    // TMDB
-    builder.Configuration["Tmdb:ApiKey"] = Environment.GetEnvironmentVariable("TMDB_API_KEY");
-    
-    // JWT
-    builder.Configuration["Jwt:Key"] = Environment.GetEnvironmentVariable("JWT_KEY");
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = dbUrl;
+}
+
+var tmdbKey = Environment.GetEnvironmentVariable("TMDB_API_KEY");
+if (!string.IsNullOrEmpty(tmdbKey))
+{
+    builder.Configuration["Tmdb:ApiKey"] = tmdbKey;
+}
+
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY");
+if (!string.IsNullOrEmpty(jwtKey))
+{
+    builder.Configuration["Jwt:Key"] = jwtKey;
     builder.Configuration["Jwt:Issuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER");
     builder.Configuration["Jwt:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
+}
 
-    // Email
-    builder.Configuration["Gmail:Email"] = Environment.GetEnvironmentVariable("GMAIL_EMAIL");
+var gmail = Environment.GetEnvironmentVariable("GMAIL_EMAIL");
+if (!string.IsNullOrEmpty(gmail))
+{
+    builder.Configuration["Gmail:Email"] = gmail;
     builder.Configuration["Gmail:Password"] = Environment.GetEnvironmentVariable("GMAIL_PASSWORD");
 }
 
@@ -37,15 +48,15 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// --- CORS ---
+// --- CORS (Verified for Vercel) ---
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.AllowAnyOrigin() // <--- Change this
-                .AllowAnyHeader()
-                .AllowAnyMethod();
+            policy.AllowAnyOrigin() 
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
         });
 });
 
@@ -85,7 +96,6 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-            // Now this will read the LONG key from your .env
             Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
     };
 });
@@ -97,6 +107,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 
 var app = builder.Build();
 
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -104,9 +115,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
-app.UseCors("AllowReactApp");
-app.UseAuthentication();
-app.UseAuthorization();
+
+// --- PIPELINE ORDER (Verified) ---
+app.UseStaticFiles();         // 1. Static Files (Images)
+app.UseCors("AllowReactApp"); // 2. CORS
+app.UseAuthentication();      // 3. Auth
+app.UseAuthorization();       // 4. Permissions
+
 app.MapControllers();
+
 app.Run();
