@@ -1,38 +1,50 @@
 using Kino.Server.Data;
+using Kino.Server.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
-builder.Services.AddScoped<Kino.Server.Services.ITmdbService, Kino.Server.Services.TmdbService>();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// --- DATABASE CONFIGURATION ---
+// --- DATABASE & IDENTITY CONFIGURATION ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
-// ------------------------------
 
-// --- CORS POLICY (Allow React to talk to .NET) ---
+// Add Identity (User/Role management)
+builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => 
+{
+    options.User.RequireUniqueEmail = true;
+    options.Password.RequireDigit = false; // Easier for testing
+    options.Password.RequiredLength = 6;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase = false;
+})
+.AddEntityFrameworkStores<AppDbContext>();
+// ----------------------------------------
+
+// --- CUSTOM SERVICES ---
+builder.Services.AddScoped<ITmdbService, TmdbService>();
+// -----------------------
+
+// --- CORS POLICY ---
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173") // The default Vite port
+            policy.WithOrigins("http://localhost:5173") 
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
 });
-// -------------------------------------------------
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -41,9 +53,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowReactApp"); // Enable CORS
+app.UseCors("AllowReactApp");
 
-app.UseAuthorization();
+// Must be in this order!
+app.UseAuthentication(); // Who are you?
+app.UseAuthorization();  // What are you allowed to do?
 
 app.MapControllers();
 
