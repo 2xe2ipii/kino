@@ -45,6 +45,14 @@ namespace Kino.Server.Controllers
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingUser))
                 {
+                    // FIX: Delete the orphan profile first
+                    var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingUser.Id);
+                    if (profile != null)
+                    {
+                        _context.UserProfiles.Remove(profile);
+                        await _context.SaveChangesAsync();
+                    }
+
                     await _userManager.DeleteAsync(existingUser);
                 }
                 else
@@ -59,6 +67,14 @@ namespace Kino.Server.Controllers
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingEmail))
                 {
+                    // FIX: Delete the orphan profile first (in case it wasn't caught by username check)
+                    var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingEmail.Id);
+                    if (profile != null)
+                    {
+                        _context.UserProfiles.Remove(profile);
+                        await _context.SaveChangesAsync();
+                    }
+
                     await _userManager.DeleteAsync(existingEmail);
                 }
                 else
@@ -80,6 +96,7 @@ namespace Kino.Server.Controllers
                     
                     if (!emailSent)
                     {
+                        // Note: No profile exists yet at this stage, so just delete user
                         await _userManager.DeleteAsync(user);
                         return StatusCode(500, "Email failed to send. Please check App Password. User deleted - try again.");
                     }

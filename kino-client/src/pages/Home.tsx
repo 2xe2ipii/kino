@@ -22,13 +22,15 @@ const Home = () => {
     const [dropdownResults, setDropdownResults] = useState<TmdbMovie[]>([]); // Quick Dropdown Results
     const [loading, setLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
-    const [recentMovies, setRecentMovies] = useState<any[]>([]);
+    
+    // Category States
+    const [recentMovies, setRecentMovies] = useState<TmdbMovie[]>([]);
+    const [topRatedMovies, setTopRatedMovies] = useState<TmdbMovie[]>([]);
+    const [upcomingMovies, setUpcomingMovies] = useState<TmdbMovie[]>([]);
     
     // Modal States
     const [selectedMovie, setSelectedMovie] = useState<TmdbMovie | null>(null);
     const [isLogModalOpen, setIsLogModalOpen] = useState(false);
-
-    
 
     // Ref for clicking outside dropdown
     const searchRef = useRef<HTMLDivElement>(null);
@@ -36,10 +38,24 @@ const Home = () => {
     // --- EFFECTS ---
 
     useEffect(() => {
-    // This fetches the movies when the page loads
-    api.get('/tmdb/now-playing')
-       .then(res => setRecentMovies(res.data.slice(0, 12))) // Top 12 movies
-       .catch(err => console.error("Failed to load Now Playing:", err));
+        // Fetch all categories
+        const fetchData = async () => {
+            try {
+                const [nowPlaying, topRated, upcoming] = await Promise.all([
+                    api.get('/tmdb/now-playing'),
+                    api.get('/tmdb/top-rated'),
+                    api.get('/tmdb/upcoming')
+                ]);
+                
+                setRecentMovies(nowPlaying.data.slice(0, 12));
+                setTopRatedMovies(topRated.data.slice(0, 12));
+                setUpcomingMovies(upcoming.data.slice(0, 12));
+            } catch (err) {
+                console.error("Failed to load movies:", err);
+            }
+        };
+
+        fetchData();
     }, []);
 
     // 1. Debounced Search for the Dropdown (Typeahead)
@@ -51,7 +67,7 @@ const Home = () => {
                 setDropdownResults([]);
                 setShowDropdown(false);
             }
-        }, 300); // Fast 300ms debounce for dropdown
+        }, 300);
 
         return () => clearTimeout(timeoutId);
     }, [query]);
@@ -70,24 +86,21 @@ const Home = () => {
     // --- HANDLERS ---
 
     const performSearch = async (searchQuery: string, isDropdown: boolean) => {
+        if (!searchQuery) return;
         setLoading(true);
         try {
-            //
-            // const res = await api.get(`/tmdb/search?query=${searchQuery}`);
             const res = await api.get(`/tmdb/search?query=${searchQuery}`);
-            // const movies = res.data.results || [];
-            // The backend returns the array directly, so just use res.data
             const movies = res.data || [];
             
             if (isDropdown) {
-                setDropdownResults(movies.slice(0, 5)); // Limit to top 5 for dropdown
+                setDropdownResults(movies.slice(0, 5));
                 setShowDropdown(true);
             } else {
                 setResults(movies); // Full grid update
-                setShowDropdown(false); // Hide dropdown on full search
+                setShowDropdown(false); 
             }
         } catch (error) {
-            console.error("Search failed. Ensure Backend is running on port 5002.", error);
+            console.error("Search failed.", error);
         } finally {
             setLoading(false);
         }
@@ -95,7 +108,7 @@ const Home = () => {
 
     const handleEnterKey = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            performSearch(query, false); // Trigger full grid search
+            performSearch(query, false);
         }
     };
 
@@ -106,18 +119,56 @@ const Home = () => {
             setSelectedMovie(movie);
             setIsLogModalOpen(true);
         }
-        setShowDropdown(false); // Close dropdown after selection
+        setShowDropdown(false);
     };
+
+    const resetSearch = () => {
+        setQuery('');
+        setResults([]);
+        setShowDropdown(false);
+    };
+
+    const isSearching = results.length > 0;
+
+    // Helper Component for consistent Card styling
+    const MovieCard = ({ movie }: { movie: TmdbMovie }) => (
+        <div 
+            onClick={() => handleMovieClick(movie)}
+            className="group relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer"
+        >
+            <div className="aspect-[2/3] bg-slate-200 relative overflow-hidden">
+                <img 
+                    src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://placehold.co/400x600?text=No+Image'} 
+                    alt={movie.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                />
+                <div className="absolute inset-0 bg-rose-900/0 group-hover:bg-rose-900/40 transition-colors duration-300 flex items-center justify-center">
+                    <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 bg-white text-rose-600 p-3 rounded-full shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-6 h-6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div className="p-4">
+                <h3 className="font-bold text-slate-800 leading-tight truncate">{movie.title}</h3>
+                <p className="text-xs text-slate-400 mt-1">{movie.release_date?.split('-')[0] || 'Unknown'}</p>
+            </div>
+        </div>
+    );
 
     return (
         <div className="min-h-screen bg-pink-50 relative pb-20 font-sans text-slate-800">
-            <Navbar />
+            <Navbar onLogoClick={resetSearch} />
 
             <div className="pt-32 px-6 max-w-7xl mx-auto">
                 
                 {/* --- HERO & SEARCH SECTION --- */}
                 <div className="text-center mb-12 relative z-20">
-                    <h1 className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-pink-600 mb-6 tracking-tighter select-none">
+                    <h1 
+                        onClick={resetSearch}
+                        className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-500 to-pink-600 mb-6 tracking-tighter select-none cursor-pointer hover:opacity-90 transition-opacity"
+                    >
                         kino.
                     </h1>
                     
@@ -139,7 +190,7 @@ const Home = () => {
                                 onFocus={() => query.length > 1 && setShowDropdown(true)}
                             />
                             
-                            {/* Right Icon (Spinner or Magnifying Glass) */}
+                            {/* Right Icon */}
                             <div className="absolute right-6 flex items-center justify-center text-slate-300">
                                 {loading ? (
                                     <svg className="animate-spin h-6 w-6 text-rose-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -154,9 +205,9 @@ const Home = () => {
                             </div>
                         </div>
 
-                        {/* --- THE ROTTEN TOMATOES STYLE DROPDOWN --- */}
+                        {/* --- DROPDOWN --- */}
                         {showDropdown && dropdownResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2 z-50">
                                 <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-widest">
                                     Top Results
                                 </div>
@@ -167,7 +218,6 @@ const Home = () => {
                                             onClick={() => handleMovieClick(movie)}
                                             className="flex items-center gap-4 px-4 py-3 hover:bg-rose-50 cursor-pointer transition-colors group/item"
                                         >
-                                            {/* Tiny Poster */}
                                             <div className="w-10 h-14 bg-slate-200 rounded overflow-hidden flex-shrink-0">
                                                 <img 
                                                     src={movie.poster_path ? `https://image.tmdb.org/t/p/w92${movie.poster_path}` : 'https://placehold.co/100x150?text=No'} 
@@ -175,7 +225,6 @@ const Home = () => {
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                            {/* Text Info */}
                                             <div className="flex-1 min-w-0">
                                                 <h4 className="font-bold text-slate-700 truncate group-hover/item:text-rose-600">
                                                     {movie.title}
@@ -184,16 +233,9 @@ const Home = () => {
                                                     {movie.release_date?.split('-')[0] || 'Unknown Year'}
                                                 </p>
                                             </div>
-                                            {/* Arrow Icon */}
-                                            <div className="text-slate-300 group-hover/item:text-rose-400">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                                </svg>
-                                            </div>
                                         </li>
                                     ))}
                                 </ul>
-                                {/* 'See all' Link */}
                                 <div 
                                     onClick={() => performSearch(query, false)}
                                     className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-center text-sm font-bold text-rose-500 cursor-pointer hover:bg-rose-50 hover:text-rose-600 transition-colors"
@@ -204,101 +246,75 @@ const Home = () => {
                         )}
                     </div>
                 </div>
-                <div className="mb-20">
-                    <Feed /> 
-                </div>
-                {/* Only show Recent Movies if user is NOT searching */}
-                {/* Only show Recent Movies if user is NOT searching (i.e. results is empty) */}
-                {results.length === 0 && (
-                    <div className="mt-20">
-                        <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
-                            <span className="bg-rose-500 w-2 h-8 rounded-full"></span>
-                            Now in Theaters
-                        </h2>
-                        
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {recentMovies.map((movie) => (
-                                <div 
-                                    key={movie.id} 
-                                    onClick={() => {
-                                        setSelectedMovie(movie);
-                                        setIsLogModalOpen(true); // <--- FIX: Correct function name
-                                    }}
-                                    className="group relative cursor-pointer"
-                                >
-                                    <div className="aspect-[2/3] rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300">
-                                        <img 
-                                            src={`https://image.tmdb.org/t/p/w300${movie.poster_path}`} 
-                                            alt={movie.title}
-                                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                                        />
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                                            <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all">
-                                                <span className="bg-white/20 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-bold border border-white/30">
-                                                    Log Film
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <h3 className="mt-2 text-sm font-bold text-slate-700 truncate group-hover:text-rose-500 transition-colors">
-                                        {movie.title}
-                                    </h3>
-                                </div>
-                            ))}
+
+                {/* --- FEED & CATEGORIES (HIDDEN WHEN SEARCHING) --- */}
+                {!isSearching && (
+                    <>
+                        <div className="mb-20">
+                            <Feed /> 
                         </div>
-                    </div>
+
+                        {/* Category 1: Fresh Releases */}
+                        <div className="mt-12">
+                            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+                                <span className="bg-rose-500 w-2 h-8 rounded-full"></span>
+                                Fresh Releases
+                            </h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                {recentMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                            </div>
+                        </div>
+
+                        {/* Category 2: Critically Acclaimed */}
+                        <div className="mt-12">
+                            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+                                <span className="bg-amber-400 w-2 h-8 rounded-full"></span>
+                                Critically Acclaimed
+                            </h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                {topRatedMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                            </div>
+                        </div>
+
+                        {/* Category 3: Coming Soon */}
+                        <div className="mt-12 mb-20">
+                            <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+                                <span className="bg-indigo-500 w-2 h-8 rounded-full"></span>
+                                Coming Soon
+                            </h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                {upcomingMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                            </div>
+                        </div>
+                    </>
                 )}
 
-                {/* --- MAIN GRID RESULTS (When Enter is Hit) --- */}
-                {results.length > 0 && (
+                {/* --- MAIN SEARCH RESULTS --- */}
+                {isSearching && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex items-center gap-4 mb-6">
                             <h2 className="text-xl font-bold text-slate-700">Search Results</h2>
                             <div className="h-px flex-1 bg-slate-200"></div>
+                            <button 
+                                onClick={resetSearch}
+                                className="text-sm font-bold text-rose-500 hover:text-rose-600"
+                            >
+                                Clear Results
+                            </button>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                            {results.map((movie) => (
-                                <div 
-                                    key={movie.id} 
-                                    onClick={() => handleMovieClick(movie)}
-                                    className="group relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 cursor-pointer"
-                                >
-                                    <div className="aspect-[2/3] bg-slate-200 relative overflow-hidden">
-                                        <img 
-                                            src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://placehold.co/400x600?text=No+Image'} 
-                                            alt={movie.title}
-                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-                                        />
-                                        <div className="absolute inset-0 bg-rose-900/0 group-hover:bg-rose-900/40 transition-colors duration-300 flex items-center justify-center">
-                                            <div className="opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 bg-white text-rose-600 p-3 rounded-full shadow-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-6 h-6">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="p-4">
-                                        <h3 className="font-bold text-slate-800 leading-tight truncate">{movie.title}</h3>
-                                        <p className="text-xs text-slate-400 mt-1">{movie.release_date?.split('-')[0] || 'Unknown'}</p>
-                                    </div>
-                                </div>
-                            ))}
+                            {results.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
                         </div>
                     </div>
                 )}
             </div>
 
             {/* Developer Credits */}
-            {/* Developer Credits & Attribution */}
             <div className="fixed bottom-4 right-6 pointer-events-none z-0 text-right flex flex-col items-end gap-2">
-                
-                {/* Your Credit */}
                 <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest opacity-60">
                     Developed by <span className="font-bold text-slate-500">2xe2ipi</span>
                 </p>
-
-                {/* TMDB Attribution */}
                 <div className="flex items-center gap-2 opacity-50">
                     <img 
                         src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" 
@@ -311,7 +327,6 @@ const Home = () => {
                 </div>
             </div>
 
-            {/* Log Movie Modal */}
             <LogMovieModal 
                 movie={selectedMovie} 
                 isOpen={isLogModalOpen} 

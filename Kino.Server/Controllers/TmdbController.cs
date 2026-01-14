@@ -18,10 +18,7 @@ namespace Kino.Server.Controllers
         public async Task<IActionResult> Search([FromQuery] string query)
         {
             if (string.IsNullOrWhiteSpace(query)) return BadRequest();
-            
             var results = await _tmdbService.SearchMoviesAsync(query);
-            
-            // FIX: Return 'results' directly (Array) instead of 'new { results }' (Object)
             return Ok(results); 
         }
 
@@ -29,6 +26,22 @@ namespace Kino.Server.Controllers
         public async Task<IActionResult> GetNowPlaying()
         {
             var results = await _tmdbService.GetNowPlayingAsync();
+            return Ok(results);
+        }
+
+        // --- NEW ENDPOINTS ---
+
+        [HttpGet("top-rated")]
+        public async Task<IActionResult> GetTopRated()
+        {
+            var results = await _tmdbService.GetTopRatedAsync();
+            return Ok(results);
+        }
+
+        [HttpGet("upcoming")]
+        public async Task<IActionResult> GetUpcoming()
+        {
+            var results = await _tmdbService.GetUpcomingAsync();
             return Ok(results);
         }
     }

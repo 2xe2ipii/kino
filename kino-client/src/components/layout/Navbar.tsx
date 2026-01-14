@@ -1,18 +1,33 @@
 import { useContext, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../../api/axios';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002';
 
-export const Navbar = () => {
+// FIX: Define props interface
+interface NavbarProps {
+    onLogoClick?: () => void;
+}
+
+export const Navbar = ({ onLogoClick }: NavbarProps) => {
     // FIX: Destructure userProfile
     const { user, userProfile, isAuthenticated, openModal, logout } = useContext(AuthContext)!;
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [showResults, setShowResults] = useState(false);
+
+    // FIX: Handle logo click
+    const handleLogoClick = (e: React.MouseEvent) => {
+        // If we are on home page and prop is provided, prevent default link behavior and run the reset function
+        if (location.pathname === '/' && onLogoClick) {
+            e.preventDefault();
+            onLogoClick();
+        }
+    };
 
     const handleSearch = async (val: string) => {
         setSearchQuery(val);
@@ -47,7 +62,11 @@ export const Navbar = () => {
             <div className="max-w-7xl mx-auto bg-white/80 backdrop-blur-md border border-white/60 rounded-2xl shadow-sm px-6 py-3 flex justify-between items-center relative">
                 
                 <div className="flex items-center gap-6">
-                    <Link to="/" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+                    <Link 
+                        to="/" 
+                        onClick={handleLogoClick}
+                        className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                    >
                         <span className="text-2xl font-black text-rose-600 tracking-tighter select-none">kino.</span>
                     </Link>
 
