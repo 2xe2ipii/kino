@@ -32,5 +32,7 @@ namespace Kino.Server.Services
             var response = await _client.GetAsync<TmdbSearchResponse>(request);
             return response?.Results ?? new List<TmdbMovieResult>();
         }
+
+        
     }
 }
