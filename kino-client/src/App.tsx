@@ -1,9 +1,9 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthModal } from './components/modals/AuthModal';
 import Home from './pages/Home';
-import Profile from './pages/Profile'; // <--- Import this
+import Profile from './pages/Profile'; 
+import PublicProfile from './pages/PublicProfile'; // <--- Import
 import Diary from './pages/Diary';
-// import Profile from './pages/Profile';
 
 function App() {
   return (
@@ -11,7 +11,8 @@ function App() {
         <AuthModal />
         <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/profile" element={<Profile />} /> {/* <--- Add this */}
+            <Route path="/profile" element={<Profile />} /> 
+            <Route path="/member/:userId" element={<PublicProfile />} /> {/* <--- New Route */}
             <Route path="/diary" element={<Diary />} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

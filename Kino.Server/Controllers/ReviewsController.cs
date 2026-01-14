@@ -140,5 +140,31 @@ namespace Kino.Server.Controllers
              await _context.SaveChangesAsync();
              return Ok();
         }
+
+        [HttpGet("user/{userId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetUserReviews(string userId)
+        {
+            var reviews = await _context.Reviews
+                .Include(r => r.Movie)
+                .Where(r => r.UserId == userId)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new 
+                {
+                    r.Id,
+                    r.RatingTechnical,
+                    r.RatingEnjoyment,
+                    r.VibeTags,
+                    r.Content,
+                    r.CreatedAt,
+                    Movie = new {
+                        Title = r.Movie!.Title,
+                        PosterPath = r.Movie.PosterPath,
+                        Year = r.Movie.Year
+                    }
+                })
+                .ToListAsync();
+
+            return Ok(reviews);
+        }
     }
 }

@@ -3,11 +3,13 @@ import { AuthContext } from '../../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+
 export const Navbar = () => {
     const { user, userAvatar, isAuthenticated, openModal, logout } = useContext(AuthContext)!;
     const navigate = useNavigate();
 
-    // Member Search State
+    // --- SEARCH STATE ---
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [showResults, setShowResults] = useState(false);
@@ -27,17 +29,23 @@ export const Navbar = () => {
         }
     };
 
+    const handleResultClick = (userId: string) => {
+        navigate(`/member/${userId}`); // Go to Public Profile
+        setShowResults(false);
+        setSearchQuery('');
+    };
+
     return (
         <nav className="fixed top-0 left-0 w-full z-40 px-6 py-4">
             <div className="max-w-7xl mx-auto bg-white/80 backdrop-blur-md border border-white/60 rounded-2xl shadow-sm px-6 py-3 flex justify-between items-center relative">
                 
-                {/* Logo Link */}
+                {/* Logo */}
                 <div className="flex items-center gap-6">
                     <Link to="/" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
                         <span className="text-2xl font-black text-rose-600 tracking-tighter select-none">kino.</span>
                     </Link>
 
-                    {/* Member Search Bar (Visible only when logged in) */}
+                    {/* --- MEMBER SEARCH BAR --- */}
                     {isAuthenticated && (
                         <div className="relative hidden md:block group">
                             <div className="flex items-center bg-slate-100 rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-rose-100 transition-all">
@@ -53,13 +61,23 @@ export const Navbar = () => {
                                 />
                             </div>
                             
-                            {/* Search Dropdown */}
+                            {/* Dropdown Results */}
                             {showResults && searchResults.length > 0 && (
-                                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden">
+                                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Members</div>
                                     {searchResults.map(u => (
-                                        <div key={u.userId} className="flex items-center gap-3 px-4 py-3 hover:bg-rose-50 cursor-pointer">
-                                            <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden">
-                                                {u.avatarUrl && <img src={u.avatarUrl} className="w-full h-full object-cover"/>}
+                                        <div 
+                                            key={u.userId} 
+                                            onClick={() => handleResultClick(u.userId)}
+                                            className="flex items-center gap-3 px-4 py-3 hover:bg-rose-50 cursor-pointer transition-colors"
+                                        >
+                                            <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-slate-200">
+                                                {u.avatarUrl && (
+                                                    <img 
+                                                        src={u.avatarUrl.startsWith('/') ? `${BASE_URL}${u.avatarUrl}` : u.avatarUrl} 
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                )}
                                             </div>
                                             <span className="text-xs font-bold text-slate-700">{u.displayName}</span>
                                         </div>
@@ -83,39 +101,18 @@ export const Navbar = () => {
                                 </span>
                                 <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-500 overflow-hidden border border-rose-200">
                                     {userAvatar ? (
-                                        <img 
-                                            src={userAvatar} 
-                                            alt="Avatar" 
-                                            className="w-full h-full object-cover"
-                                        />
+                                        <img src={userAvatar} alt="Avatar" className="w-full h-full object-cover"/>
                                     ) : (
-                                        <span className="font-bold text-lg">
-                                            {user?.sub?.substring(0, 1).toUpperCase()}
-                                        </span>
+                                        <span className="font-bold text-lg">{user?.sub?.substring(0, 1).toUpperCase()}</span>
                                     )}
                                 </div>
                             </div>
-                            <button 
-                                onClick={logout}
-                                className="text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors ml-2"
-                            >
-                                Sign Out
-                            </button>
+                            <button onClick={logout} className="text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors ml-2">Sign Out</button>
                         </div>
                     ) : (
                         <div className="flex items-center gap-4">
-                            <button 
-                                onClick={() => openModal('LOGIN')} 
-                                className="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors"
-                            >
-                                Sign In
-                            </button>
-                            <button 
-                                onClick={() => openModal('REGISTER')} 
-                                className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-200 transition-transform active:scale-95"
-                            >
-                                Join Club
-                            </button>
+                            <button onClick={() => openModal('LOGIN')} className="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
+                            <button onClick={() => openModal('REGISTER')} className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-200 transition-transform active:scale-95">Join Club</button>
                         </div>
                     )}
                 </div>

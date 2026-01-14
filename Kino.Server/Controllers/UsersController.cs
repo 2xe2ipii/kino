@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Kino.Server.Data;
+using Kino.Server.Models;
 
 namespace Kino.Server.Controllers
 {
@@ -15,6 +16,7 @@ namespace Kino.Server.Controllers
             _context = context;
         }
 
+        // 1. Search Members
         [HttpGet("search")]
         public async Task<IActionResult> Search(string query)
         {
@@ -23,10 +25,29 @@ namespace Kino.Server.Controllers
             var users = await _context.UserProfiles
                 .Where(u => u.DisplayName.ToLower().Contains(query.ToLower()))
                 .Select(u => new { u.DisplayName, u.AvatarUrl, u.UserId })
-                .Take(10)
+                .Take(5)
                 .ToListAsync();
 
             return Ok(users);
+        }
+
+        // 2. Get Public Profile (by ID)
+        [HttpGet("{userId}")]
+        public async Task<IActionResult> GetPublicProfile(string userId)
+        {
+            var profile = await _context.UserProfiles
+                .FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (profile == null) return NotFound("User not found");
+
+            return Ok(new 
+            {
+                profile.DisplayName,
+                profile.AvatarUrl,
+                profile.Bio,
+                profile.FavoriteMovie,
+                profile.UserId
+            });
         }
     }
 }
