@@ -37,22 +37,23 @@ namespace Kino.Server.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto request)
         {
-            // --- 1. DETECT AND PURGE ZOMBIE USERS ---
+            // --- 1. CLEANUP ZOMBIE USERS (Fixes Duplicate Profiles) ---
             
-            // Check Username
+            // Check if username exists but is unverified
             var existingUser = await _userManager.FindByNameAsync(request.Username);
             if (existingUser != null)
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingUser))
                 {
-                    // FIX: Delete the orphan profile first
-                    var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingUser.Id);
-                    if (profile != null)
+                    // FIX: Delete the profile associated with this zombie user first
+                    var zombieProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingUser.Id);
+                    if (zombieProfile != null)
                     {
-                        _context.UserProfiles.Remove(profile);
+                        _context.UserProfiles.Remove(zombieProfile);
                         await _context.SaveChangesAsync();
                     }
 
+                    // Now delete the user
                     await _userManager.DeleteAsync(existingUser);
                 }
                 else
@@ -61,17 +62,17 @@ namespace Kino.Server.Controllers
                 }
             }
 
-            // Check Email
+            // Check if email exists but is unverified
             var existingEmail = await _userManager.FindByEmailAsync(request.Email);
             if (existingEmail != null)
             {
                 if (!await _userManager.IsEmailConfirmedAsync(existingEmail))
                 {
-                    // FIX: Delete the orphan profile first (in case it wasn't caught by username check)
-                    var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingEmail.Id);
-                    if (profile != null)
+                    // FIX: Delete the profile associated with this zombie user first
+                    var zombieProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingEmail.Id);
+                    if (zombieProfile != null)
                     {
-                        _context.UserProfiles.Remove(profile);
+                        _context.UserProfiles.Remove(zombieProfile);
                         await _context.SaveChangesAsync();
                     }
 
@@ -91,22 +92,34 @@ namespace Kino.Server.Controllers
             {
                 try 
                 {
-                    // --- 3. SEND EMAIL ---
                     var emailSent = await SendVerificationEmail(user);
-                    
                     if (!emailSent)
                     {
-                        // Note: No profile exists yet at this stage, so just delete user
                         await _userManager.DeleteAsync(user);
                         return StatusCode(500, "Email failed to send. Please check App Password. User deleted - try again.");
                     }
+
+                    // Create the Profile immediately
+                    var profile = new UserProfile 
+                    { 
+                        UserId = user.Id, 
+                        // Use the provided DisplayName, or fallback to Username if empty
+                        DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? request.Username : request.DisplayName,
+                        AvatarUrl = "https://placehold.co/400",
+                        Bio = "No bio yet.",
+                        DateJoined = DateTime.UtcNow
+                    }; 
+                    
+                    _context.UserProfiles.Add(profile);
+                    await _context.SaveChangesAsync();
 
                     return Ok(new { message = "Registration successful! Verification code sent.", userId = user.Id });
                 }
                 catch (Exception ex)
                 {
+                    // Cleanup if anything fails
                     await _userManager.DeleteAsync(user);
-                    return StatusCode(500, $"Email System Crash: {ex.Message}");
+                    return StatusCode(500, $"System Error: {ex.Message}");
                 }
             }
 
