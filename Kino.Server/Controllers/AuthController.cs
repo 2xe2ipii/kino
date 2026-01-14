@@ -130,6 +130,26 @@ namespace Kino.Server.Controllers
             return BadRequest("Invalid or expired verification code.");
         }
 
+        [HttpPost("resend-verification")]
+        public async Task<IActionResult> ResendVerification([FromBody] ResendDto request)
+        {
+            var user = await _userManager.FindByIdAsync(request.UserId);
+            if (user == null) return BadRequest("User not found.");
+
+            if (await _userManager.IsEmailConfirmedAsync(user))
+                return BadRequest("Email is already verified. Please login.");
+
+            try
+            {
+                await SendVerificationEmail(user);
+                return Ok(new { message = "Code resent successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Failed to send email: {ex.Message}");
+            }
+        }
+
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto request)
         {
