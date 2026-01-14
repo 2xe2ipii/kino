@@ -4,13 +4,12 @@ using Kino.Server.Data;
 using Kino.Server.Models;
 using Kino.Server.DTOs;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization; // Required for [Authorize]
+using Microsoft.AspNetCore.Authorization;
 
 namespace Kino.Server.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // <--- Forces user to be logged in
     public class ReviewsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -20,18 +19,49 @@ namespace Kino.Server.Controllers
             _context = context;
         }
 
+        // 1. GET FEED (Global)
+        [HttpGet("feed")]
+        public async Task<ActionResult<IEnumerable<object>>> GetFeed()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var reviews = await _context.Reviews
+                .Include(r => r.Movie)
+                .Include(r => r.Likes)
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(20)
+                .Select(r => new 
+                {
+                    r.Id,
+                    r.RatingTechnical,
+                    r.RatingEnjoyment,
+                    r.VibeTags,
+                    r.Content,
+                    r.CreatedAt,
+                    r.UserId,
+                    Movie = new { r.Movie!.Title, r.Movie.PosterPath, r.Movie.Year },
+                    Likes = r.Likes.Count,
+                    IsLikedByMe = userId != null && r.Likes.Any(l => l.UserId == userId),
+                    Author = _context.UserProfiles
+                        .Where(up => up.UserId == r.UserId)
+                        .Select(up => new { up.DisplayName, up.AvatarUrl })
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            return Ok(reviews);
+        }
+
+        // 2. POST REVIEW (Log Entry)
         [HttpPost]
+        [Authorize]
         public async Task<IActionResult> PostReview(CreateReviewDto dto)
         {
-            // Get the User ID from the valid Token
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId))
-            {
-                return Unauthorized("User ID claim is missing from token.");
-            }
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
+            // Check if movie exists, if not, create snapshot
             var movie = await _context.Movies.FirstOrDefaultAsync(m => m.TmdbId == dto.MovieId);
-
             if (movie == null)
             {
                 movie = new Movie
@@ -39,19 +69,22 @@ namespace Kino.Server.Controllers
                     TmdbId = dto.MovieId,
                     Title = dto.MovieTitle,
                     PosterPath = dto.PosterPath,
-                    Year = DateTime.UtcNow.Year
+                    Year = dto.DateWatched.Year
                 };
                 _context.Movies.Add(movie);
                 await _context.SaveChangesAsync();
             }
 
+            // --- FIXED: Mapping new fields ---
             var review = new Review
             {
                 MovieId = movie.Id,
-                Rating = dto.Rating,
+                RatingTechnical = dto.RatingTechnical,
+                RatingEnjoyment = dto.RatingEnjoyment,
+                VibeTags = dto.VibeTags,
                 Content = dto.Content,
                 CreatedAt = dto.DateWatched.ToUniversalTime(),
-                UserId = userId // <--- Save the User ID
+                UserId = userId
             };
 
             _context.Reviews.Add(review);
@@ -60,20 +93,23 @@ namespace Kino.Server.Controllers
             return Ok(review);
         }
 
+        // 3. GET MY REVIEWS (Profile)
         [HttpGet]
+        [Authorize]
         public async Task<ActionResult<IEnumerable<object>>> GetReviews()
         {
-            // Get the User ID from the token
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
-                .Where(r => r.UserId == userId) // <--- Filter: Only MY reviews
+                .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new 
                 {
                     r.Id,
-                    r.Rating,
+                    r.RatingTechnical,  // <--- Ensure we return these now
+                    r.RatingEnjoyment,
+                    r.VibeTags,
                     r.Content,
                     r.CreatedAt,
                     Movie = new {
@@ -86,6 +122,23 @@ namespace Kino.Server.Controllers
                 .ToListAsync();
 
             return Ok(reviews);
+        }
+
+        [HttpPost("{id}/like")]
+        [Authorize]
+        public async Task<IActionResult> LikeReview(int id)
+        {
+             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+             if (userId == null) return Unauthorized();
+
+             var existingLike = await _context.ReviewLikes
+                .FirstOrDefaultAsync(l => l.ReviewId == id && l.UserId == userId);
+
+             if (existingLike != null) _context.ReviewLikes.Remove(existingLike);
+             else _context.ReviewLikes.Add(new ReviewLike { ReviewId = id, UserId = userId });
+             
+             await _context.SaveChangesAsync();
+             return Ok();
         }
     }
 }

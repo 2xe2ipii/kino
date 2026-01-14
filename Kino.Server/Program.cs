@@ -127,5 +127,6 @@ app.UseAuthentication();      // 3. Auth
 app.UseAuthorization();       // 4. Permissions
 
 app.MapControllers();
-
+// FIX: This tells .NET to serve the React App for any unknown routes (like /profile)
+app.MapFallbackToFile("index.html");
 app.Run();

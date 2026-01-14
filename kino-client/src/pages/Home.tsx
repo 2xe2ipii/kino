@@ -3,6 +3,7 @@ import api from '../api/axios';
 import { AuthContext } from '../context/AuthContext';
 import { LogMovieModal } from '../components/modals/LogMovieModal';
 import { Navbar } from '../components/layout/Navbar';
+import { Feed } from '../components/features/Feed';
 
 interface TmdbMovie {
     id: number;
@@ -203,7 +204,9 @@ const Home = () => {
                         )}
                     </div>
                 </div>
-
+                <div className="mb-20">
+                    <Feed /> 
+                </div>
                 {/* Only show Recent Movies if user is NOT searching */}
                 {/* Only show Recent Movies if user is NOT searching (i.e. results is empty) */}
                 {results.length === 0 && (
