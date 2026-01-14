@@ -1,63 +1,44 @@
 import { createContext, useState, useEffect, type ReactNode } from 'react';
-import api from '../api/axios'; // <--- FIX: Added missing import
+import api from '../api/axios';
 
 interface User {
     sub: string;
-    jti: string;
+    email: string;
 }
 
-export type ModalView = 'LOGIN' | 'REGISTER';
+interface UserProfile {
+    displayName: string;
+    avatarUrl: string;
+    bio: string;
+}
 
 interface AuthContextType {
     user: User | null;
-    token: string | null;
+    userProfile: UserProfile | null;
     isAuthenticated: boolean;
-    userAvatar: string | null;      // <--- FIX: Added missing field
-    refreshProfile: () => void;     // <--- FIX: Added missing field
-    login: (token: string) => void;
+    token: string | null;
+    login: (token: string, username: string, shouldClose?: boolean) => void; // <--- UPDATED SIGNATURE
     logout: () => void;
-    isModalOpen: boolean;
-    modalView: ModalView;
-    openModal: (view?: ModalView) => void;
+    modalType: 'LOGIN' | 'REGISTER' | null;
+    openModal: (type: 'LOGIN' | 'REGISTER') => void;
     closeModal: () => void;
+    refreshProfile: () => void;
 }
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-    const [userAvatar, setUserAvatar] = useState<string | null>(null); // <--- New State
-    
-    // Modal State
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalView, setModalView] = useState<ModalView>('LOGIN');
-
-    // Helper to fetch profile (avatar)
-    const fetchProfile = async () => {
-        try {
-            const res = await api.get('/auth/profile');
-            if (res.data.avatarUrl) {
-                // Ensure absolute URL if backend returns relative path
-                const url = res.data.avatarUrl.startsWith('/') 
-                    ? `${BASE_URL}${res.data.avatarUrl}`
-                    : res.data.avatarUrl;
-                setUserAvatar(url);
-            }
-        } catch (e) {
-            console.log("Profile load failed (user might be offline or token expired)");
-        }
-    };
+    const [modalType, setModalType] = useState<'LOGIN' | 'REGISTER' | null>(null);
 
     useEffect(() => {
         if (token) {
             try {
-                // Decode token manually to avoid external library dependency if simpler
                 const payload = JSON.parse(atob(token.split('.')[1]));
-                setUser({ sub: payload.sub, jti: payload.jti });
-                
-                // Fetch avatar immediately on load
+                setUser({ sub: payload.sub, email: payload.email });
+                api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
                 fetchProfile();
             } catch (e) {
                 logout();
@@ -65,39 +46,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
     }, [token]);
 
-    const login = (newToken: string) => {
+    const fetchProfile = async () => {
+        try {
+            const res = await api.get('/auth/profile');
+            setUserProfile(res.data);
+        } catch (e) {
+            console.error("Failed to fetch profile");
+        }
+    };
+
+    // --- UPDATED LOGIN FUNCTION ---
+    const login = (newToken: string, username: string, shouldClose = true) => {
         localStorage.setItem('token', newToken);
         setToken(newToken);
-        setIsModalOpen(false);
-        // Fetch profile immediately after login
-        setTimeout(fetchProfile, 100); 
+        setUser({ sub: username, email: '' });
+        api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+        fetchProfile();
+        
+        if (shouldClose) {
+            closeModal();
+        }
     };
 
     const logout = () => {
         localStorage.removeItem('token');
         setToken(null);
         setUser(null);
-        setUserAvatar(null);
+        setUserProfile(null);
+        delete api.defaults.headers.common['Authorization'];
     };
 
-    const openModal = (view: ModalView = 'LOGIN') => {
-        setModalView(view);
-        setIsModalOpen(true);
-    };
+    const openModal = (type: 'LOGIN' | 'REGISTER') => setModalType(type);
+    const closeModal = () => setModalType(null);
 
     return (
         <AuthContext.Provider value={{ 
             user, 
+            userProfile, 
+            isAuthenticated: !!user, 
             token, 
-            isAuthenticated: !!token, 
-            userAvatar,      // <--- Expose
-            refreshProfile: fetchProfile, // <--- Expose
             login, 
             logout, 
-            isModalOpen, 
-            modalView,
+            modalType, 
             openModal, 
-            closeModal: () => setIsModalOpen(false) 
+            closeModal,
+            refreshProfile: fetchProfile 
         }}>
             {children}
         </AuthContext.Provider>

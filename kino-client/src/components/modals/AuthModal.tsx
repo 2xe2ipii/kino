@@ -1,259 +1,264 @@
-import { useState, useContext, useEffect, useRef } from 'react';
+import { useContext, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import api from '../../api/axios';
+import { Loading } from '../ui/Loading';
 
-type ViewState = 'LOGIN' | 'REGISTER' | 'VERIFY';
+const STEP_LOGIN = 0;
+const STEP_REGISTER = 1;
+const STEP_VERIFY = 2;
+const STEP_ONBOARD_PROFILE = 3;
+const STEP_ONBOARD_AVATAR = 4;
 
 export const AuthModal = () => {
-    const { isModalOpen, modalView, closeModal, login } = useContext(AuthContext)!;
-    const [view, setView] = useState<ViewState>('LOGIN');
+    const { modalType, closeModal, login } = useContext(AuthContext)!;
+    
+    const [step, setStep] = useState(STEP_LOGIN);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
     
     // Form Data
-    const [email, setEmail] = useState('');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [userId, setUserId] = useState<string | null>(null);
+    const [email, setEmail] = useState('');
+    const [userId, setUserId] = useState(''); 
+    const [verificationCode, setVerificationCode] = useState('');
     
-    // UI State
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    // Onboarding Data
+    const [displayName, setDisplayName] = useState('');
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
-    // --- OTP LOGIC ---
-    const [otp, setOtp] = useState(['', '', '', '', '', '']);
-    const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+    if (!modalType) return null;
+    if (step === STEP_LOGIN && modalType === 'REGISTER' && !loading && username === '') setStep(STEP_REGISTER);
 
-    useEffect(() => {
-        if (isModalOpen) {
-            setView(modalView); 
-            setError('');
-            setOtp(['', '', '', '', '', '']); 
-            if (!userId) {
-                setUsername('');
-                setPassword('');
-                setEmail('');
-            }
-        }
-    }, [isModalOpen, modalView]); 
-
-    const handleOtpChange = (index: number, value: string) => {
-        if (loading) return; // Block input if loading
-        if (isNaN(Number(value))) return; 
-        const newOtp = [...otp];
-        newOtp[index] = value.substring(value.length - 1); 
-        setOtp(newOtp);
-        if (value && index < 5) otpRefs.current[index + 1]?.focus();
-    };
-
-    const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
-        if (loading) return;
-        if (e.key === 'Backspace' && !otp[index] && index > 0) {
-            otpRefs.current[index - 1]?.focus();
-        }
-    };
-
-    const handleOtpPaste = (e: React.ClipboardEvent) => {
-        if (loading) return;
-        e.preventDefault();
-        const data = e.clipboardData.getData('text').slice(0, 6).split('');
-        if (data.every(char => !isNaN(Number(char)))) {
-            const newOtp = [...otp];
-            data.forEach((char, i) => { if (i < 6) newOtp[i] = char; });
-            setOtp(newOtp);
-            otpRefs.current[Math.min(data.length, 5)]?.focus();
-        }
-    };
-
-    // --- API HANDLERS ---
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
-        setError('');
+        setLoading(true); setError('');
         try {
             const res = await api.post('/auth/login', { username, password });
-            login(res.data.token);
+            login(res.data.token, res.data.username, true); 
+            setStep(STEP_LOGIN); 
         } catch (err: any) {
-            const data = err.response?.data;
-            setError(typeof data === 'string' ? data : (data?.message || 'Invalid credentials.'));
-        } finally {
-            setLoading(false);
-        }
+            setError(err.response?.data || 'Login failed');
+        } finally { setLoading(false); }
     };
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
-        setError('');
+        setLoading(true); setError('');
         try {
             const res = await api.post('/auth/register', { username, email, password });
-            const newUserId = res.data.userId || res.data.UserId;
-            setUserId(newUserId); 
-            setView('VERIFY');
+            setUserId(res.data.userId); 
+            setStep(STEP_VERIFY);
         } catch (err: any) {
-            const data = err.response?.data;
-            let msg = 'Failed to register.';
-            if (typeof data === 'string') msg = data;
-            else if (data?.message) msg = data.message;
-            else if (Array.isArray(data)) msg = data.map((e: any) => e.description).join(' ');
-            else if (data?.errors) { const k = Object.keys(data.errors)[0]; msg = `${k}: ${data.errors[k][0]}`; }
-            setError(msg);
-        } finally {
-            setLoading(false);
-        }
+            setError(err.response?.data?.[0]?.description || 'Registration failed');
+        } finally { setLoading(false); }
     };
 
     const handleVerify = async (e: React.FormEvent) => {
         e.preventDefault();
-        const code = otp.join('');
-        if (code.length !== 6) { setError('Please enter the full 6-digit code.'); return; }
-        
-        setLoading(true);
-        setError('');
+        setLoading(true); setError('');
         try {
-            await api.post('/auth/verify-email', { userId, token: code });
-            const loginRes = await api.post('/auth/login', { username, password });
-            login(loginRes.data.token);
+            const res = await api.post('/auth/verify-email', { userId, token: verificationCode });
+            // Login but keep modal open for onboarding
+            login(res.data.token, res.data.username, false);
+            setStep(STEP_ONBOARD_PROFILE);
         } catch (err: any) {
-            const msg = err.response?.data;
-            setError(typeof msg === 'string' ? msg : 'Invalid code.');
-        } finally {
-            setLoading(false);
-        }
+            setError('Invalid code.');
+        } finally { setLoading(false); }
     };
 
-    if (!isModalOpen) return null;
+    const handleSaveProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            await api.put('/auth/profile', { displayName });
+            setStep(STEP_ONBOARD_AVATAR);
+        } catch (e) { setError('Failed to save name.'); }
+        finally { setLoading(false); }
+    };
+
+    const handleAvatarUpload = async (skip: boolean) => {
+        if (skip) {
+            finishOnboarding();
+            return;
+        }
+        if (!avatarFile) return;
+
+        setLoading(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', avatarFile);
+            await api.post('/auth/upload-avatar', formData);
+            finishOnboarding();
+        } catch (e) { setError('Upload failed.'); }
+        finally { setLoading(false); }
+    };
+
+    const finishOnboarding = () => {
+        closeModal();
+        window.location.reload(); // Refresh to show new avatar/name state
+    };
+
+    // Helper for Step Dots
+    const renderDots = (current: number, total: number) => (
+        <div className="flex justify-center gap-2 mb-8">
+            {Array.from({ length: total }).map((_, i) => (
+                <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i <= current ? 'w-8 bg-rose-500' : 'w-2 bg-slate-200'}`} />
+            ))}
+        </div>
+    );
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={loading ? undefined : closeModal} />
-
-            <div className="relative w-full max-w-md bg-white/80 backdrop-blur-xl border border-white/40 shadow-2xl rounded-[2rem] overflow-hidden p-8 animate-in zoom-in-95 duration-200">
-                <div className="absolute -top-20 -right-20 w-60 h-60 bg-rose-400/20 rounded-full blur-3xl pointer-events-none" />
-                <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none" />
-
-                {/* FIX 1: Z-Index 50 ensures this is always clickable 
-                   Added disabled state to prevent closing while submitting
-                */}
-                <button 
-                    onClick={closeModal} 
-                    disabled={loading}
-                    className="absolute top-6 right-6 z-50 p-2 rounded-full hover:bg-black/5 transition-colors text-slate-400 hover:text-rose-500 disabled:opacity-0"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden relative min-h-[500px] flex flex-col">
+                
+                <button onClick={closeModal} className="absolute top-6 right-6 text-slate-300 hover:text-slate-800 z-20 transition-colors">
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
 
-                <div className="text-center mb-8 relative z-10">
-                    <h2 className="text-3xl font-bold text-slate-800 tracking-tight">
-                        {view === 'LOGIN' && 'Welcome Back'}
-                        {view === 'REGISTER' && 'Create Account'}
-                        {view === 'VERIFY' && 'Verify Email'}
-                    </h2>
-                    <p className="text-xs font-bold text-rose-500 tracking-[0.2em] uppercase mt-2 opacity-80">
-                        {view === 'VERIFY' ? `Code sent to ${email}` : 'The Movie Diary'}
-                    </p>
+                {loading && <div className="absolute inset-0 bg-white/90 z-30 flex items-center justify-center"><Loading /></div>}
+
+                <div className="flex-1 p-10 md:p-14 flex flex-col justify-center">
+
+                    {/* --- 1. LOGIN --- */}
+                    {step === STEP_LOGIN && (
+                        <form onSubmit={handleLogin} className="space-y-6 max-w-sm mx-auto w-full">
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2">Welcome back.</h2>
+                                <p className="text-slate-500 font-medium">Sign in to your Kino diary.</p>
+                            </div>
+
+                            {error && <div className="bg-rose-50 text-rose-500 p-3 rounded-xl text-xs font-bold text-center">{error}</div>}
+                            
+                            <div className="space-y-3">
+                                <input type="text" placeholder="Username" className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400" value={username} onChange={e => setUsername(e.target.value)} />
+                                <input type="password" placeholder="Password" className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400" value={password} onChange={e => setPassword(e.target.value)} />
+                            </div>
+
+                            <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-slate-200 transition-all transform active:scale-95">
+                                Login
+                            </button>
+
+                            <div className="text-center pt-4">
+                                <span className="text-slate-400 font-bold text-sm">No account? </span>
+                                <button type="button" onClick={() => setStep(STEP_REGISTER)} className="text-rose-500 font-black text-sm hover:underline">Join Club</button>
+                            </div>
+                        </form>
+                    )}
+
+                    {/* --- 2. REGISTER --- */}
+                    {step === STEP_REGISTER && (
+                        <form onSubmit={handleRegister} className="space-y-6 max-w-sm mx-auto w-full">
+                            <div className="text-center mb-8">
+                                <h2 className="text-3xl font-black text-rose-500 tracking-tighter mb-2">Join the Club.</h2>
+                                <p className="text-slate-500 font-medium">Create your Kino account.</p>
+                            </div>
+
+                            {renderDots(0, 4)}
+
+                            {error && <div className="bg-rose-50 text-rose-500 p-3 rounded-xl text-xs font-bold text-center">{error}</div>}
+                            
+                            <div className="space-y-3">
+                                <input type="text" placeholder="Username" className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400" value={username} onChange={e => setUsername(e.target.value)} />
+                                <input type="email" placeholder="Email" className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400" value={email} onChange={e => setEmail(e.target.value)} />
+                                <input type="password" placeholder="Password" className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400" value={password} onChange={e => setPassword(e.target.value)} />
+                            </div>
+
+                            <button type="submit" className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200 transition-all transform active:scale-95">
+                                Verify
+                            </button>
+
+                            <div className="text-center pt-4">
+                                <span className="text-slate-400 font-bold text-sm">Have an account? </span>
+                                <button type="button" onClick={() => setStep(STEP_LOGIN)} className="text-slate-800 font-black text-sm hover:underline">Login</button>
+                            </div>
+                        </form>
+                    )}
+
+                    {/* --- 3. VERIFY --- */}
+                    {step === STEP_VERIFY && (
+                        <form onSubmit={handleVerify} className="space-y-8 max-w-sm mx-auto w-full text-center">
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2">Check your email.</h2>
+                                <p className="text-slate-500 font-medium">We sent a code to <span className="text-slate-800 font-bold">{email}</span></p>
+                            </div>
+
+                            {renderDots(1, 4)}
+
+                            {error && <div className="bg-rose-50 text-rose-500 p-3 rounded-xl text-xs font-bold">{error}</div>}
+
+                            <input 
+                                type="text" 
+                                placeholder="000000" 
+                                className="w-full bg-slate-100 border-none p-6 rounded-2xl font-black text-3xl text-center text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 tracking-[1rem] placeholder:text-slate-300 transition-all" 
+                                value={verificationCode} 
+                                onChange={e => setVerificationCode(e.target.value)} 
+                                autoFocus
+                            />
+
+                            <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-slate-200 transition-all transform active:scale-95">
+                                Continue
+                            </button>
+                        </form>
+                    )}
+
+                    {/* --- 4. ONBOARDING: DISPLAY NAME --- */}
+                    {step === STEP_ONBOARD_PROFILE && (
+                        <form onSubmit={handleSaveProfile} className="space-y-8 max-w-sm mx-auto w-full text-center animate-in slide-in-from-right duration-500">
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2">Who are you?</h2>
+                                <p className="text-slate-500 font-medium">Your username is @{username}. Pick a name for your profile.</p>
+                            </div>
+
+                            {renderDots(2, 4)}
+
+                            <input 
+                                type="text" 
+                                placeholder="Display Name (e.g. Marty McFly)" 
+                                className="w-full bg-slate-100 border-none p-4 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-rose-500/20 transition-all placeholder:text-slate-400 text-center" 
+                                value={displayName} 
+                                onChange={e => setDisplayName(e.target.value)} 
+                                autoFocus 
+                            />
+
+                            <button type="submit" className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200 transition-all transform active:scale-95">
+                                Next
+                            </button>
+                        </form>
+                    )}
+
+                    {/* --- 5. ONBOARDING: AVATAR --- */}
+                    {step === STEP_ONBOARD_AVATAR && (
+                        <div className="space-y-8 max-w-sm mx-auto w-full text-center animate-in slide-in-from-right duration-500">
+                            <div>
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2">Pick a look.</h2>
+                                <p className="text-slate-500 font-medium">Upload a profile picture.</p>
+                            </div>
+
+                            {renderDots(3, 4)}
+                            
+                            <div className="flex justify-center">
+                                <label className="w-40 h-40 bg-slate-100 rounded-full flex items-center justify-center overflow-hidden border-4 border-slate-50 cursor-pointer hover:bg-slate-200 transition-colors group relative">
+                                    {avatarFile ? (
+                                        <img src={URL.createObjectURL(avatarFile)} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-5xl text-slate-300 group-hover:text-slate-400 transition-colors">+</span>
+                                    )}
+                                    <input type="file" onChange={e => e.target.files && setAvatarFile(e.target.files[0])} className="hidden" accept="image/*"/>
+                                </label>
+                            </div>
+
+                            <div className="space-y-3">
+                                <button onClick={() => handleAvatarUpload(false)} disabled={!avatarFile} className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-rose-200 transition-all transform active:scale-95 disabled:opacity-50 disabled:scale-100">
+                                    Finish
+                                </button>
+                                <button onClick={() => handleAvatarUpload(true)} className="text-slate-400 font-bold text-sm hover:text-slate-600">Skip</button>
+                            </div>
+                        </div>
+                    )}
+
                 </div>
-
-                {error && (
-                    <div className="mb-6 p-3 bg-rose-50/80 backdrop-blur-sm text-rose-600 text-xs text-center rounded-xl font-semibold border border-rose-100 animate-in slide-in-from-top-2">
-                        {error}
-                    </div>
-                )}
-
-                {view === 'LOGIN' && (
-                    <form onSubmit={handleLogin} className="space-y-4 relative z-10" autoComplete="off">
-                        <div className="space-y-4">
-                            <InputGroup disabled={loading} name="kino_username" type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                            <InputGroup disabled={loading} name="kino_password" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                        </div>
-                        <SubmitButton loading={loading} label="Sign In" />
-                        <FooterLink disabled={loading} text="New here? Create account" onClick={() => setView('REGISTER')} />
-                    </form>
-                )}
-
-                {view === 'REGISTER' && (
-                    <form onSubmit={handleRegister} className="space-y-4 relative z-10" autoComplete="off">
-                        <div className="space-y-4">
-                            <InputGroup disabled={loading} name="kino_reg_username" type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                            <InputGroup disabled={loading} name="kino_reg_email" type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} />
-                            <InputGroup disabled={loading} name="kino_reg_password" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                        </div>
-                        <SubmitButton loading={loading} label="Create Account" />
-                        <FooterLink disabled={loading} text="Already have an account? Sign in" onClick={() => setView('LOGIN')} />
-                    </form>
-                )}
-
-                {view === 'VERIFY' && (
-                    <form onSubmit={handleVerify} className="space-y-8 relative z-10" autoComplete="off">
-                        <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
-                            {otp.map((digit, i) => (
-                                <input
-                                    key={i}
-                                    disabled={loading}
-                                    ref={el => { otpRefs.current[i] = el }}
-                                    type="text"
-                                    maxLength={1}
-                                    value={digit}
-                                    onChange={e => handleOtpChange(i, e.target.value)}
-                                    onKeyDown={e => handleOtpKeyDown(i, e)}
-                                    className="w-12 h-14 text-center text-2xl font-bold bg-white/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-400 focus:border-transparent outline-none transition-all shadow-sm text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-                            ))}
-                        </div>
-                        <SubmitButton loading={loading} label="Verify & Login" />
-                        <FooterLink disabled={loading} text="Wrong email? Go back" onClick={() => setView('REGISTER')} />
-                    </form>
-                )}
             </div>
         </div>
     );
 };
-
-// --- SUB-COMPONENTS ---
-
-interface InputGroupProps {
-    type: string;
-    placeholder: string;
-    value: string;
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    name: string;
-    disabled?: boolean;
-}
-
-const InputGroup = ({ type, placeholder, value, onChange, name, disabled }: InputGroupProps) => (
-    <div className="relative group">
-        <input 
-            name={name}
-            type={type}
-            disabled={disabled}
-            placeholder=" " 
-            autoComplete={type === 'password' ? 'new-password' : 'off'}
-            className="peer w-full bg-white/50 border border-slate-200 rounded-xl px-4 pt-6 pb-2 text-slate-800 font-medium outline-none focus:ring-2 focus:ring-rose-400/50 focus:border-rose-400 transition-all shadow-sm group-hover:bg-white/80 disabled:opacity-60 disabled:cursor-not-allowed" 
-            value={value} 
-            onChange={onChange} 
-        />
-        <label className="absolute left-4 top-4 text-xs font-bold text-slate-400 transition-all pointer-events-none 
-            peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-placeholder-shown:text-slate-400 
-            peer-focus:top-1.5 peer-focus:text-[10px] peer-focus:text-rose-500 
-            peer-[&:not(:placeholder-shown)]:top-1.5 peer-[&:not(:placeholder-shown)]:text-[10px] peer-[&:not(:placeholder-shown)]:text-rose-500">
-            {placeholder}
-        </label>
-    </div>
-);
-
-const SubmitButton = ({ loading, label }: { loading: boolean, label: string }) => (
-    <button disabled={loading} className="w-full bg-slate-900 hover:bg-black text-white font-bold py-4 rounded-xl transition-all transform active:scale-[0.98] shadow-lg shadow-slate-200/50 disabled:opacity-70 disabled:cursor-not-allowed">
-        {loading ? (
-            <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                Processing...
-            </span>
-        ) : label}
-    </button>
-);
-
-const FooterLink = ({ text, onClick, disabled }: { text: string, onClick: () => void, disabled?: boolean }) => (
-    <p className={`text-center text-xs font-semibold text-slate-400 mt-4 transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:text-rose-500'}`} onClick={disabled ? undefined : onClick}>
-        {text}
-    </p>
-);

@@ -1,13 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Authorization; // FIXED: Needed for [Authorize]
-using Microsoft.EntityFrameworkCore;      // FIXED: Needed for async DB calls
-using System.Security.Claims;             // FIXED: Needed for User.FindFirstValue
-using Kino.Server.Data;                   // FIXED: Needed for AppDbContext
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using Kino.Server.Data;
 using Kino.Server.Models;
 using Kino.Server.DTOs;
 using Kino.Server.Services;
-
 namespace Kino.Server.Controllers
 {
     [Route("api/[controller]")]
@@ -97,6 +96,7 @@ namespace Kino.Server.Controllers
             return BadRequest(result.Errors);
         }
 
+        // --- UPDATED VERIFY: Returns Token for Instant Login ---
         [HttpPost("verify-email")]
         public async Task<IActionResult> VerifyEmail(VerifyEmailDto request)
         {
@@ -107,7 +107,24 @@ namespace Kino.Server.Controllers
 
             if (result.Succeeded)
             {
-                return Ok(new { message = "Email confirmed! Logging you in..." });
+                var token = _tokenService.CreateToken(user);
+                
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == user.Id);
+                if (profile == null)
+                {
+                    // FIX: Handle potential null UserName
+                    profile = new UserProfile { UserId = user.Id, DisplayName = user.UserName ?? "Member" }; 
+                    _context.UserProfiles.Add(profile);
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new 
+                { 
+                    message = "Email confirmed!",
+                    username = user.UserName,
+                    email = user.Email,
+                    token = token
+                });
             }
 
             return BadRequest("Invalid or expired verification code.");
