@@ -1,32 +1,25 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Kino.Server.Data;
 using Kino.Server.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using DotNetEnv; 
+using DotNetEnv;
 
-// 1. Load .env if it exists (for Localhost)
 Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 2. CONFIGURATION MAPPING (Modified for Production)
-// We removed 'if (File.Exists)' so this runs on Render too.
-// We use '??' to keep existing values if the Env Var is missing (safety).
-
+// Map environment variables to config
 var dbUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
-if (!string.IsNullOrEmpty(dbUrl)) 
-{
+if (!string.IsNullOrEmpty(dbUrl))
     builder.Configuration["ConnectionStrings:DefaultConnection"] = dbUrl;
-}
 
 var tmdbKey = Environment.GetEnvironmentVariable("TMDB_API_KEY");
 if (!string.IsNullOrEmpty(tmdbKey))
-{
     builder.Configuration["Tmdb:ApiKey"] = tmdbKey;
-}
 
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY");
 if (!string.IsNullOrEmpty(jwtKey))
@@ -36,53 +29,42 @@ if (!string.IsNullOrEmpty(jwtKey))
     builder.Configuration["Jwt:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
 }
 
-// Load SMTP settings from Environment Variables (Brevo)
-var smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST");
-if (!string.IsNullOrEmpty(smtpHost))
-{
-    builder.Configuration["Smtp:Host"] = smtpHost;
-    builder.Configuration["Smtp:Port"] = Environment.GetEnvironmentVariable("SMTP_PORT");
-    builder.Configuration["Smtp:User"] = Environment.GetEnvironmentVariable("SMTP_USER");
-    builder.Configuration["Smtp:Pass"] = Environment.GetEnvironmentVariable("SMTP_PASS");
-    builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
-}
+var googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+if (!string.IsNullOrEmpty(googleClientId))
+    builder.Configuration["Google:ClientId"] = googleClientId;
 
-// Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// --- CORS (Verified for Vercel) ---
+// CORS
+var jwtAudience = builder.Configuration["Jwt:Audience"]?.TrimEnd('/') ?? "";
+var allowedOrigins = new[] { "http://localhost:5173", "http://localhost:3000" }
+    .Concat(string.IsNullOrEmpty(jwtAudience) ? [] : new[] { jwtAudience })
+    .ToArray();
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowReactApp",
-        policy =>
-        {
-            policy.AllowAnyOrigin() 
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
-        });
+    options.AddPolicy("AllowReactApp", policy =>
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod());
 });
 
-// --- DB & IDENTITY ---
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+builder.Services.AddMemoryCache();
 
-builder.Services.AddIdentity<IdentityUser, IdentityRole>(options => 
+builder.Services.AddRateLimiter(options =>
 {
-    options.User.RequireUniqueEmail = true;
-    options.Password.RequireDigit = false;
-    options.Password.RequireLowercase = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
-    options.Tokens.EmailConfirmationTokenProvider = TokenOptions.DefaultEmailProvider;
-})
-.AddEntityFrameworkStores<AppDbContext>()
-.AddDefaultTokenProviders(); 
+    options.AddFixedWindowLimiter("auth", o =>
+    {
+        o.PermitLimit = 10;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
 
-// --- AUTHENTICATION (JWT) ---
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -104,29 +86,23 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// --- CUSTOM SERVICES ---
 builder.Services.AddScoped<ITmdbService, TmdbService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
-// --- PIPELINE ORDER (Verified) ---
-app.UseStaticFiles();         // 1. Static Files (Images)
-app.UseCors("AllowReactApp"); // 2. CORS
-app.UseAuthentication();      // 3. Auth
-app.UseAuthorization();       // 4. Permissions
+app.UseStaticFiles();
+app.UseCors("AllowReactApp");
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
-// FIX: This tells .NET to serve the React App for any unknown routes (like /profile)
 app.MapFallbackToFile("index.html");
 app.Run();

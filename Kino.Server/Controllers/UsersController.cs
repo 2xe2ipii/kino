@@ -22,31 +22,36 @@ namespace Kino.Server.Controllers
         {
             if (string.IsNullOrWhiteSpace(query)) return Ok(new List<object>());
 
-            var users = await _context.UserProfiles
-                .Where(u => u.DisplayName.ToLower().Contains(query.ToLower()))
-                .Select(u => new { u.DisplayName, u.AvatarUrl, u.UserId })
+            var users = await _context.Users
+                .Where(u => u.DisplayName.ToLower().Contains(query.ToLower()) ||
+                            u.Username.ToLower().Contains(query.ToLower()))
+                .Select(u => new { u.DisplayName, u.AvatarUrl, u.Username, u.Id })
                 .Take(5)
                 .ToListAsync();
 
             return Ok(users);
         }
 
-        // 2. Get Public Profile (by ID)
-        [HttpGet("{userId}")]
-        public async Task<IActionResult> GetPublicProfile(string userId)
+        // 2. Get Public Profile (by username)
+        [HttpGet("{username}")]
+        public async Task<IActionResult> GetPublicProfile(string username)
         {
-            var profile = await _context.UserProfiles
-                .FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _context.Users
+                .Include(u => u.TopMovies)
+                .FirstOrDefaultAsync(u => u.Username == username);
 
-            if (profile == null) return NotFound("User not found");
+            if (user == null) return NotFound("User not found");
 
-            return Ok(new 
+            return Ok(new
             {
-                profile.DisplayName,
-                profile.AvatarUrl,
-                profile.Bio,
-                profile.FavoriteMovie,
-                profile.UserId
+                user.DisplayName,
+                user.AvatarUrl,
+                user.Bio,
+                user.Username,
+                user.Id,
+                topMovies = user.TopMovies
+                    .OrderBy(m => m.Rank)
+                    .Select(m => new { m.Rank, m.TmdbId, m.Title, m.PosterPath })
             });
         }
     }

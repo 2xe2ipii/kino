@@ -23,14 +23,15 @@ namespace Kino.Server.Controllers
         [HttpGet("feed")]
         public async Task<ActionResult<IEnumerable<object>>> GetFeed()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            int? currentUserId = userIdStr != null ? int.Parse(userIdStr) : null;
 
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
                 .Include(r => r.Likes)
                 .OrderByDescending(r => r.CreatedAt)
                 .Take(20)
-                .Select(r => new 
+                .Select(r => new
                 {
                     r.Id,
                     r.RatingTechnical,
@@ -41,10 +42,10 @@ namespace Kino.Server.Controllers
                     r.UserId,
                     Movie = new { r.Movie!.Title, r.Movie.PosterPath, r.Movie.Year },
                     Likes = r.Likes.Count,
-                    IsLikedByMe = userId != null && r.Likes.Any(l => l.UserId == userId),
-                    Author = _context.UserProfiles
-                        .Where(up => up.UserId == r.UserId)
-                        .Select(up => new { up.DisplayName, up.AvatarUrl })
+                    IsLikedByMe = currentUserId != null && r.Likes.Any(l => l.UserId == currentUserId),
+                    Author = _context.Users
+                        .Where(u => u.Id == r.UserId)
+                        .Select(u => new { u.DisplayName, u.AvatarUrl })
                         .FirstOrDefault()
                 })
                 .ToListAsync();
@@ -57,8 +58,9 @@ namespace Kino.Server.Controllers
         [Authorize]
         public async Task<IActionResult> PostReview(CreateReviewDto dto)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+            var userId = int.Parse(userIdStr);
 
             // Check if movie exists, if not, create snapshot
             var movie = await _context.Movies.FirstOrDefaultAsync(m => m.TmdbId == dto.MovieId);
@@ -75,7 +77,6 @@ namespace Kino.Server.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            // --- FIXED: Mapping new fields ---
             var review = new Review
             {
                 MovieId = movie.Id,
@@ -98,21 +99,23 @@ namespace Kino.Server.Controllers
         [Authorize]
         public async Task<ActionResult<IEnumerable<object>>> GetReviews()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = int.Parse(userIdStr!);
 
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.CreatedAt)
-                .Select(r => new 
+                .Select(r => new
                 {
                     r.Id,
-                    r.RatingTechnical,  // <--- Ensure we return these now
+                    r.RatingTechnical,
                     r.RatingEnjoyment,
                     r.VibeTags,
                     r.Content,
                     r.CreatedAt,
-                    Movie = new {
+                    Movie = new
+                    {
                         Title = r.Movie!.Title,
                         PosterPath = r.Movie.PosterPath,
                         Year = r.Movie.Year,
@@ -128,27 +131,28 @@ namespace Kino.Server.Controllers
         [Authorize]
         public async Task<IActionResult> LikeReview(int id)
         {
-             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-             if (userId == null) return Unauthorized();
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdStr == null) return Unauthorized();
+            var userId = int.Parse(userIdStr);
 
-             var existingLike = await _context.ReviewLikes
-                .FirstOrDefaultAsync(l => l.ReviewId == id && l.UserId == userId);
+            var existingLike = await _context.ReviewLikes
+               .FirstOrDefaultAsync(l => l.ReviewId == id && l.UserId == userId);
 
-             if (existingLike != null) _context.ReviewLikes.Remove(existingLike);
-             else _context.ReviewLikes.Add(new ReviewLike { ReviewId = id, UserId = userId });
-             
-             await _context.SaveChangesAsync();
-             return Ok();
+            if (existingLike != null) _context.ReviewLikes.Remove(existingLike);
+            else _context.ReviewLikes.Add(new ReviewLike { ReviewId = id, UserId = userId });
+
+            await _context.SaveChangesAsync();
+            return Ok();
         }
 
         [HttpGet("user/{userId}")]
-        public async Task<ActionResult<IEnumerable<object>>> GetUserReviews(string userId)
+        public async Task<ActionResult<IEnumerable<object>>> GetUserReviews(int userId)
         {
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
                 .Where(r => r.UserId == userId)
                 .OrderByDescending(r => r.CreatedAt)
-                .Select(r => new 
+                .Select(r => new
                 {
                     r.Id,
                     r.RatingTechnical,
@@ -156,7 +160,8 @@ namespace Kino.Server.Controllers
                     r.VibeTags,
                     r.Content,
                     r.CreatedAt,
-                    Movie = new {
+                    Movie = new
+                    {
                         Title = r.Movie!.Title,
                         PosterPath = r.Movie.PosterPath,
                         Year = r.Movie.Year
