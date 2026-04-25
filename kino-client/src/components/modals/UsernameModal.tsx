@@ -5,6 +5,19 @@ import api from '../../api/axios';
 export const UsernameModal = () => {
     const { pendingGoogle, completeProfile } = useContext(AuthContext)!;
     const [username, setUsername] = useState('');
+    
+    // Pre-fill username once when pendingGoogle is set
+    useEffect(() => {
+        if (pendingGoogle && !username) {
+            const suggested = pendingGoogle.displayName
+                .toLowerCase()
+                .replace(/\s+/g, '')
+                .replace(/[^a-z0-9_-]/g, '')
+                .slice(0, 20);
+            setUsername(suggested);
+        }
+    }, [pendingGoogle]);
+
     const [available, setAvailable] = useState<boolean | null>(null);
     const [checking, setChecking] = useState(false);
     const [loading, setLoading] = useState(false);

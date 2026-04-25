@@ -90,6 +90,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 email: res.data.email,
                 displayName: res.data.displayName,
             });
+            setModalType(null); // Ensure AuthModal closes
         } else {
             storeToken(res.data.token);
             closeModal();
