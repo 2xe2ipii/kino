@@ -2,7 +2,8 @@ import { createContext, useState, useEffect, type ReactNode } from 'react';
 import api from '../api/axios';
 
 interface User {
-    sub: string;
+    id: string;
+    username: string;
     email: string;
 }
 
@@ -12,16 +13,24 @@ interface UserProfile {
     bio: string;
 }
 
+interface PendingGoogle {
+    googleId: string;
+    email: string;
+    displayName: string;
+}
+
 interface AuthContextType {
     user: User | null;
-    userProfile: UserProfile | null;
-    isAuthenticated: boolean;
     token: string | null;
-    login: (token: string, username: string, shouldClose?: boolean) => void; // <--- UPDATED SIGNATURE
+    pendingGoogle: PendingGoogle | null;
+    loginWithGoogle: (idToken: string) => Promise<void>;
+    completeProfile: (username: string) => Promise<void>;
     logout: () => void;
-    modalType: 'LOGIN' | 'REGISTER' | null;
-    openModal: (type: 'LOGIN' | 'REGISTER') => void;
+    isAuthenticated: boolean;
+    modalType: 'LOGIN' | null;
+    openModal: (type: 'LOGIN') => void;
     closeModal: () => void;
+    userProfile: UserProfile | null;
     refreshProfile: () => void;
 }
 
@@ -31,16 +40,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-    const [modalType, setModalType] = useState<'LOGIN' | 'REGISTER' | null>(null);
+    const [pendingGoogle, setPendingGoogle] = useState<PendingGoogle | null>(null);
+    const [modalType, setModalType] = useState<'LOGIN' | null>(null);
 
     useEffect(() => {
         if (token) {
             try {
                 const payload = JSON.parse(atob(token.split('.')[1]));
-                setUser({ sub: payload.sub, email: payload.email });
+                setUser({
+                    id: payload.sub,
+                    username: payload.unique_name,
+                    email: payload.email,
+                });
                 api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
                 fetchProfile();
-            } catch (e) {
+            } catch {
                 logout();
             }
         }
@@ -50,22 +64,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             const res = await api.get('/auth/profile');
             setUserProfile(res.data);
-        } catch (e) {
-            console.error("Failed to fetch profile");
+        } catch {
+            console.error('Failed to fetch profile');
         }
     };
 
-    // --- UPDATED LOGIN FUNCTION ---
-    const login = (newToken: string, username: string, shouldClose = true) => {
+    const storeToken = (newToken: string) => {
         localStorage.setItem('token', newToken);
         setToken(newToken);
-        setUser({ sub: username, email: '' });
+        const payload = JSON.parse(atob(newToken.split('.')[1]));
+        setUser({
+            id: payload.sub,
+            username: payload.unique_name,
+            email: payload.email,
+        });
         api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
         fetchProfile();
-        
-        if (shouldClose) {
+    };
+
+    const loginWithGoogle = async (idToken: string): Promise<void> => {
+        const res = await api.post('/auth/google', { idToken });
+        if (res.data.isNewUser) {
+            setPendingGoogle({
+                googleId: res.data.googleId,
+                email: res.data.email,
+                displayName: res.data.displayName,
+            });
+        } else {
+            storeToken(res.data.token);
             closeModal();
         }
+    };
+
+    const completeProfile = async (username: string): Promise<void> => {
+        if (!pendingGoogle) return;
+        const res = await api.post('/auth/complete-profile', {
+            googleId: pendingGoogle.googleId,
+            email: pendingGoogle.email,
+            displayName: pendingGoogle.displayName,
+            username,
+        });
+        storeToken(res.data.token);
+        setPendingGoogle(null);
     };
 
     const logout = () => {
@@ -73,24 +113,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setToken(null);
         setUser(null);
         setUserProfile(null);
+        setPendingGoogle(null);
         delete api.defaults.headers.common['Authorization'];
     };
 
-    const openModal = (type: 'LOGIN' | 'REGISTER') => setModalType(type);
+    const openModal = (type: 'LOGIN') => setModalType(type);
     const closeModal = () => setModalType(null);
 
     return (
-        <AuthContext.Provider value={{ 
-            user, 
-            userProfile, 
-            isAuthenticated: !!user, 
-            token, 
-            login, 
-            logout, 
-            modalType, 
-            openModal, 
+        <AuthContext.Provider value={{
+            user,
+            token,
+            pendingGoogle,
+            loginWithGoogle,
+            completeProfile,
+            logout,
+            isAuthenticated: !!user,
+            modalType,
+            openModal,
             closeModal,
-            refreshProfile: fetchProfile 
+            userProfile,
+            refreshProfile: fetchProfile,
         }}>
             {children}
         </AuthContext.Provider>
