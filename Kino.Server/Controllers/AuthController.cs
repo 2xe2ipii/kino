@@ -1,275 +1,161 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Identity;
+using Google.Apis.Auth;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Kino.Server.Data;
 using Kino.Server.Models;
-using Kino.Server.DTOs;
 using Kino.Server.Services;
+
 namespace Kino.Server.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly UserManager<IdentityUser> _userManager;
-        private readonly SignInManager<IdentityUser> _signInManager;
+        private readonly AppDbContext _context;
         private readonly ITokenService _tokenService;
-        private readonly IEmailService _emailService;
-        private readonly AppDbContext _context; // FIXED: Added Context field
+        private readonly IConfiguration _config;
 
-        // FIXED: Inject AppDbContext in constructor
-        public AuthController(
-            UserManager<IdentityUser> userManager, 
-            SignInManager<IdentityUser> signInManager, 
-            ITokenService tokenService, 
-            IEmailService emailService,
-            AppDbContext context) 
+        public AuthController(AppDbContext context, ITokenService tokenService, IConfiguration config)
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
+            _context = context;
             _tokenService = tokenService;
-            _emailService = emailService;
-            _context = context; 
+            _config = config;
         }
 
-        [HttpPost("register")]
-        public async Task<IActionResult> Register(RegisterDto request)
+        [HttpPost("google")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> GoogleSignIn([FromBody] GoogleSignInDto dto)
         {
-            // --- 1. CLEANUP ZOMBIE USERS (Fixes Duplicate Profiles) ---
-            
-            // Check if username exists but is unverified
-            var existingUser = await _userManager.FindByNameAsync(request.Username);
-            if (existingUser != null)
-            {
-                if (!await _userManager.IsEmailConfirmedAsync(existingUser))
-                {
-                    // FIX: Delete the profile associated with this zombie user first
-                    var zombieProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingUser.Id);
-                    if (zombieProfile != null)
-                    {
-                        _context.UserProfiles.Remove(zombieProfile);
-                        await _context.SaveChangesAsync();
-                    }
-
-                    // Now delete the user
-                    await _userManager.DeleteAsync(existingUser);
-                }
-                else
-                {
-                    return BadRequest($"Username '{request.Username}' is already taken.");
-                }
-            }
-
-            // Check if email exists but is unverified
-            var existingEmail = await _userManager.FindByEmailAsync(request.Email);
-            if (existingEmail != null)
-            {
-                if (!await _userManager.IsEmailConfirmedAsync(existingEmail))
-                {
-                    // FIX: Delete the profile associated with this zombie user first
-                    var zombieProfile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == existingEmail.Id);
-                    if (zombieProfile != null)
-                    {
-                        _context.UserProfiles.Remove(zombieProfile);
-                        await _context.SaveChangesAsync();
-                    }
-
-                    await _userManager.DeleteAsync(existingEmail);
-                }
-                else
-                {
-                    return BadRequest($"Email '{request.Email}' is already in use.");
-                }
-            }
-
-            // --- 2. CREATE NEW USER ---
-            var user = new IdentityUser { UserName = request.Username, Email = request.Email };
-            var result = await _userManager.CreateAsync(user, request.Password);
-
-            if (result.Succeeded)
-            {
-                try 
-                {
-                    var emailSent = await SendVerificationEmail(user);
-                    if (!emailSent)
-                    {
-                        await _userManager.DeleteAsync(user);
-                        return StatusCode(500, "Email failed to send. Please check App Password. User deleted - try again.");
-                    }
-
-                    // Create the Profile immediately
-                    var profile = new UserProfile 
-                    { 
-                        UserId = user.Id, 
-                        // Use the provided DisplayName, or fallback to Username if empty
-                        DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? request.Username : request.DisplayName,
-                        AvatarUrl = "https://placehold.co/400",
-                        Bio = "No bio yet.",
-                        DateJoined = DateTime.UtcNow
-                    }; 
-                    
-                    _context.UserProfiles.Add(profile);
-                    await _context.SaveChangesAsync();
-
-                    return Ok(new { message = "Registration successful! Verification code sent.", userId = user.Id });
-                }
-                catch (Exception ex)
-                {
-                    // Cleanup if anything fails
-                    await _userManager.DeleteAsync(user);
-                    return StatusCode(500, $"System Error: {ex.Message}");
-                }
-            }
-
-            return BadRequest(result.Errors);
-        }
-
-        // --- UPDATED VERIFY: Returns Token for Instant Login ---
-        [HttpPost("verify-email")]
-        public async Task<IActionResult> VerifyEmail(VerifyEmailDto request)
-        {
-            var user = await _userManager.FindByIdAsync(request.UserId);
-            if (user == null) return BadRequest("Invalid user ID.");
-
-            var result = await _userManager.ConfirmEmailAsync(user, request.Token);
-
-            if (result.Succeeded)
-            {
-                var token = _tokenService.CreateToken(user);
-                
-                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == user.Id);
-                if (profile == null)
-                {
-                    // FIX: Handle potential null UserName
-                    profile = new UserProfile { UserId = user.Id, DisplayName = user.UserName ?? "Member" }; 
-                    _context.UserProfiles.Add(profile);
-                    await _context.SaveChangesAsync();
-                }
-
-                return Ok(new 
-                { 
-                    message = "Email confirmed!",
-                    username = user.UserName,
-                    email = user.Email,
-                    token = token
-                });
-            }
-
-            return BadRequest("Invalid or expired verification code.");
-        }
-
-        [HttpPost("resend-verification")]
-        public async Task<IActionResult> ResendVerification([FromBody] ResendDto request)
-        {
-            var user = await _userManager.FindByIdAsync(request.UserId);
-            if (user == null) return BadRequest("User not found.");
-
-            if (await _userManager.IsEmailConfirmedAsync(user))
-                return BadRequest("Email is already verified. Please login.");
-
+            GoogleJsonWebSignature.Payload payload;
             try
             {
-                await SendVerificationEmail(user);
-                return Ok(new { message = "Code resent successfully." });
+                var settings = new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { _config["Google:ClientId"] }
+                };
+                payload = await GoogleJsonWebSignature.ValidateAsync(dto.IdToken, settings);
             }
-            catch (Exception ex)
+            catch
             {
-                return StatusCode(500, $"Failed to send email: {ex.Message}");
+                return Unauthorized("Invalid Google token.");
             }
-        }
 
-        [HttpPost("login")]
-        public async Task<IActionResult> Login(LoginDto request)
-        {
-            var user = await _userManager.FindByNameAsync(request.Username);
-            if (user == null) return Unauthorized("Invalid username or password.");
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.GoogleId == payload.Subject);
+            if (user != null)
+                return Ok(new { token = _tokenService.CreateToken(user) });
 
-            if (!await _userManager.IsEmailConfirmedAsync(user))
+            return Ok(new
             {
-                return Unauthorized("Please check your email for the verification code.");
-            }
-
-            var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, false);
-
-            if (!result.Succeeded) return Unauthorized("Invalid username or password.");
-
-            var token = _tokenService.CreateToken(user);
-
-            return Ok(new 
-            { 
-                username = user.UserName,
-                email = user.Email,
-                token = token
+                isNewUser = true,
+                googleId = payload.Subject,
+                email = payload.Email,
+                displayName = payload.Name
             });
         }
 
-        private async Task<bool> SendVerificationEmail(IdentityUser user)
+        [HttpPost("complete-profile")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> CompleteProfile([FromBody] CompleteProfileDto dto)
         {
-            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            if (!Regex.IsMatch(dto.Username, @"^[a-zA-Z0-9_-]{3,20}$"))
+                return BadRequest("Username must be 3–20 characters: letters, numbers, underscores, hyphens only.");
 
-            var emailBody = $@"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset='utf-8'>
-                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                <style>
-                    body {{ margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }}
-                    .container {{ width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.05); margin-top: 40px; margin-bottom: 40px; border: 1px solid #e2e8f0; }}
-                    .header {{ background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%); padding: 40px 0; text-align: center; border-bottom: 1px solid #f1f5f9; }}
-                    .content {{ padding: 40px 48px; text-align: center; }}
-                    .code-box {{ background-color: #fff1f2; color: #be185d; font-size: 32px; letter-spacing: 8px; font-weight: bold; padding: 24px; border-radius: 16px; margin: 32px 0; border: 2px dashed #fbcfe8; display: inline-block; font-family: 'Courier New', monospace; }}
-                    .footer {{ background-color: #f8fafc; padding: 24px; text-align: center; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; }}
-                    h1 {{ color: #0f172a; font-size: 24px; margin: 0 0 16px 0; letter-spacing: -0.5px; }}
-                    p {{ color: #475569; font-size: 16px; line-height: 1.6; margin: 0; }}
-                </style>
-            </head>
-            <body>
-                <div style='background-color: #f1f5f9; padding: 20px;'>
-                    <div class='container'>
-                        <div class='header'>
-                            <h2 style='margin:0; font-family: Georgia, serif; color: #be185d; font-size: 36px; letter-spacing: -1px;'>kino.</h2>
-                            <p style='color: #be185d; font-size: 11px; text-transform: uppercase; letter-spacing: 3px; margin-top: 8px; font-weight: 700; opacity: 0.8;'>The Movie Diary</p>
-                        </div>
+            if (await _context.Users.AnyAsync(u => u.Username == dto.Username))
+                return BadRequest("Username is already taken.");
 
-                        <div class='content'>
-                            <h1>Verify your email</h1>
-                            <p>Welcome to Kino, <strong>{user.UserName}</strong>.<br>Enter this code to start logging your films.</p>
-                            
-                            <div class='code-box'>{token}</div>
-                            
-                            <p style='font-size: 14px; color: #94a3b8;'>This code will expire in 10 minutes.<br>If you didn't request this, you can safely ignore this email.</p>
-                        </div>
+            var user = new User
+            {
+                GoogleId = dto.GoogleId,
+                Email = dto.Email,
+                Username = dto.Username,
+                DisplayName = dto.DisplayName,
+                AvatarUrl = "https://placehold.co/400",
+                Bio = "No bio yet.",
+                DateJoined = DateTime.UtcNow
+            };
 
-                        <div class='footer'>
-                            <p>&copy; 2026 Kino App. All rights reserved.</p>
-                        </div>
-                    </div>
-                </div>
-            </body>
-            </html>";
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
 
-            return await _emailService.SendEmailAsync(user.Email!, "Your Kino Verification Code", emailBody);
+            return Ok(new { token = _tokenService.CreateToken(user) });
         }
 
-        // --- PROFILE ENDPOINTS (FIXED) ---
+        [HttpGet("check-username")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> CheckUsername([FromQuery] string username)
+        {
+            var taken = await _context.Users.AnyAsync(u => u.Username == username);
+            return Ok(new { available = !taken });
+        }
 
         [Authorize]
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
-            
-            return Ok(new 
-            { 
-                displayName = profile?.DisplayName ?? "",
-                avatarUrl = profile?.AvatarUrl ?? "",
-                bio = profile?.Bio ?? "", 
-                favoriteMovie = profile?.FavoriteMovie ?? "" 
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _context.Users
+                .Include(u => u.TopMovies)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null) return NotFound();
+
+            return Ok(new
+            {
+                displayName = user.DisplayName,
+                avatarUrl = user.AvatarUrl,
+                bio = user.Bio,
+                topMovies = user.TopMovies
+                    .OrderBy(m => m.Rank)
+                    .Select(m => new { m.Rank, m.TmdbId, m.Title, m.PosterPath })
             });
+        }
+
+        [Authorize]
+        [HttpPut("profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileDto dto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null) return NotFound();
+
+            if (!string.IsNullOrWhiteSpace(dto.DisplayName)) user.DisplayName = dto.DisplayName;
+            if (!string.IsNullOrWhiteSpace(dto.Bio)) user.Bio = dto.Bio;
+            if (!string.IsNullOrWhiteSpace(dto.AvatarUrl)) user.AvatarUrl = dto.AvatarUrl;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { user.DisplayName, user.AvatarUrl, user.Bio });
+        }
+
+        [Authorize]
+        [HttpPut("top-movies")]
+        public async Task<IActionResult> UpdateTopMovies([FromBody] UpdateTopMoviesDto dto)
+        {
+            if (dto.Movies.Count > 10)
+                return BadRequest("Maximum 10 top movies allowed.");
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var existing = _context.UserTopMovies.Where(m => m.UserId == userId);
+            _context.UserTopMovies.RemoveRange(existing);
+
+            foreach (var m in dto.Movies)
+            {
+                _context.UserTopMovies.Add(new UserTopMovie
+                {
+                    UserId = userId,
+                    Rank = m.Rank,
+                    TmdbId = m.TmdbId,
+                    Title = m.Title,
+                    PosterPath = m.PosterPath
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            return Ok();
         }
 
         [Authorize]
@@ -278,72 +164,59 @@ namespace Kino.Server.Controllers
         {
             if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
 
-            // FIX: Strictly look for NameIdentifier (which is now the ID)
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (!allowedExtensions.Contains(ext))
+                return BadRequest("Only jpg, png, webp, and gif files are allowed.");
 
-            if (string.IsNullOrEmpty(userId)) return Unauthorized("User ID missing.");
+            if (file.Length > 5 * 1024 * 1024)
+                return BadRequest("File size must be under 5MB.");
 
-            // ... Folder/Saving logic (Keep your existing file saving code here) ...
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
             var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
             if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
 
-            var ext = Path.GetExtension(file.FileName);
             var filename = $"{userId}_{DateTime.UtcNow.Ticks}{ext}";
             var filePath = Path.Combine(uploadsFolder, filename);
 
             using (var stream = new FileStream(filePath, FileMode.Create))
-            {
                 await file.CopyToAsync(stream);
-            }
 
-            // DB Update
-            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
-            if (profile == null)
-            {
-                profile = new UserProfile { UserId = userId };
-                _context.UserProfiles.Add(profile);
-            }
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null) return NotFound();
 
-            var fileUrl = $"/uploads/{filename}";
-            profile.AvatarUrl = fileUrl;
-            
+            user.AvatarUrl = $"/uploads/{filename}";
             await _context.SaveChangesAsync();
-            return Ok(new { url = fileUrl });
+
+            return Ok(new { url = user.AvatarUrl });
         }
-
-        [Authorize]
-        [HttpPut("profile")]
-        public async Task<IActionResult> UpdateProfile([FromBody] UserProfileDto dto)
-        {
-            // FIX: Strictly look for NameIdentifier
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            
-            if (string.IsNullOrEmpty(userId)) return Unauthorized("User ID missing.");
-
-            var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
-
-            if (profile == null)
-            {
-                profile = new UserProfile { UserId = userId };
-                _context.UserProfiles.Add(profile);
-            }
-
-            profile.DisplayName = dto.DisplayName;
-            profile.Bio = dto.Bio;
-            profile.AvatarUrl = dto.AvatarUrl; 
-            // Note: We don't overwrite FavoriteMovie here usually, unless you added it to the form
-            
-            await _context.SaveChangesAsync();
-            return Ok(profile);
-        }
-        
     }
 
-     public class UserProfileDto
-        {
-            public string DisplayName { get; set; } = string.Empty;
-            public string AvatarUrl { get; set; } = string.Empty;
-            public string Bio { get; set; } = string.Empty;
-            public string FavoriteMovie { get; set; } = string.Empty;
-        }
+    public class GoogleSignInDto { public string IdToken { get; set; } = string.Empty; }
+
+    public class CompleteProfileDto
+    {
+        public string GoogleId { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+    }
+
+    public class UpdateProfileDto
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public string AvatarUrl { get; set; } = string.Empty;
+        public string Bio { get; set; } = string.Empty;
+    }
+
+    public class TopMovieDto
+    {
+        public int Rank { get; set; }
+        public int TmdbId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? PosterPath { get; set; }
+    }
+
+    public class UpdateTopMoviesDto { public List<TopMovieDto> Movies { get; set; } = new(); }
 }
