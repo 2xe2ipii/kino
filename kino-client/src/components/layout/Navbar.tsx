@@ -119,7 +119,7 @@ export const Navbar = ({ onLogoClick }: NavbarProps) => {
                     ) : (
                         <div className="flex items-center gap-4">
                             <button onClick={() => openModal('LOGIN')} className="text-sm font-bold text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
-                            <button onClick={() => openModal('REGISTER')} className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-200 transition-transform active:scale-95">Join Club</button>
+                            <button onClick={() => openModal('LOGIN')} className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-rose-200 transition-transform active:scale-95">Join Club</button>
                         </div>
                     )}
                 </div>
