@@ -27,8 +27,8 @@ interface AuthContextType {
     completeProfile: (username: string) => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
-    modalType: 'LOGIN' | null;
-    openModal: (type: 'LOGIN') => void;
+    modalType: 'LOGIN' | 'REGISTER' | null;
+    openModal: (type: 'LOGIN' | 'REGISTER') => void;
     closeModal: () => void;
     userProfile: UserProfile | null;
     refreshProfile: () => void;
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
     const [pendingGoogle, setPendingGoogle] = useState<PendingGoogle | null>(null);
-    const [modalType, setModalType] = useState<'LOGIN' | null>(null);
+    const [modalType, setModalType] = useState<'LOGIN' | 'REGISTER' | null>(null);
 
     useEffect(() => {
         if (token) {
@@ -117,7 +117,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         delete api.defaults.headers.common['Authorization'];
     };
 
-    const openModal = (type: 'LOGIN') => setModalType(type);
+    const openModal = (type: 'LOGIN' | 'REGISTER') => setModalType(type);
     const closeModal = () => setModalType(null);
 
     return (

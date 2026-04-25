@@ -1,9 +1,14 @@
-import { useContext } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { AuthContext } from '../../context/AuthContext';
 
 export const AuthModal = () => {
     const { modalType, closeModal, loginWithGoogle } = useContext(AuthContext)!;
+    const [isSignUp, setIsSignUp] = useState(false);
+
+    useEffect(() => {
+        setIsSignUp(modalType === 'REGISTER');
+    }, [modalType]);
 
     if (!modalType) return null;
 
@@ -22,16 +27,34 @@ export const AuthModal = () => {
 
                 <div className="text-center">
                     <h2 className="text-4xl font-black text-rose-500 tracking-tighter mb-2">kino.</h2>
-                    <p className="text-slate-500 font-medium text-lg">Your personal film diary.</p>
+                    <p className="text-slate-500 font-medium text-lg">
+                        {isSignUp ? 'Join the club.' : 'Welcome back.'}
+                    </p>
                 </div>
 
-                <GoogleLogin
-                    onSuccess={({ credential }) => loginWithGoogle(credential!)}
-                    onError={() => console.error('Google login failed')}
-                    text="continue_with"
-                    shape="rectangular"
-                    size="large"
-                />
+                <div className="w-full flex justify-center">
+                    <GoogleLogin
+                        onSuccess={({ credential }) => loginWithGoogle(credential!)}
+                        onError={() => console.error('Google auth failed')}
+                        text={isSignUp ? 'signup_with' : 'signin_with'}
+                        shape="rectangular"
+                        size="large"
+                        width="320"
+                    />
+                </div>
+
+                <div className="text-center pt-2">
+                    <p className="text-slate-400 font-bold text-sm">
+                        {isSignUp ? 'Already a member?' : 'New to Kino?'}
+                        {' '}
+                        <button 
+                            onClick={() => setIsSignUp(!isSignUp)}
+                            className="text-rose-500 font-black hover:underline"
+                        >
+                            {isSignUp ? 'Sign In' : 'Join Club'}
+                        </button>
+                    </p>
+                </div>
             </div>
         </div>
     );
