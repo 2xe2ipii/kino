@@ -73,7 +73,7 @@ All existing migrations are deleted. A single clean migration is generated from 
 
 `POST /api/auth/complete-profile`
 - Body: `{ googleId: string, email: string, displayName: string, username: string }`
-- Validates username: non-empty, alphanumeric + underscores/hyphens, 3–20 chars, not already taken
+- Validates username server-side: regex `^[a-zA-Z0-9_-]{3,20}$`, not already taken
 - Creates `User` row with `AvatarUrl = "https://placehold.co/400"`, `Bio = "No bio yet."`, `DateJoined = UtcNow`
 - Returns `{ token: string }` (Kino JWT)
 - Rate-limited ("auth" policy)
@@ -192,7 +192,9 @@ VITE_GOOGLE_CLIENT_ID=<same value>
 
 - JWT structure and validation (`TokenService` claims, 7-day expiry, HMAC SHA512)
 - `Review`, `ReviewLike`, `Movie` entities (except FK type `string` → `int` on userId fields)
-- All non-auth endpoints (`ReviewsController`, `MoviesController`, `TmdbController`, `UsersController`)
+- `MoviesController`, `TmdbController` — no changes
+- `ReviewsController` — logic unchanged; `GetUserReviews(string userId)` parameter type changes to `int`
+- `UsersController` — logic unchanged; `GetUser(string userId)` parameter type changes to `int`
 - Avatar upload endpoint (`POST /api/auth/upload-avatar`)
 - Profile update endpoint (`PUT /api/auth/profile`)
 - Frontend routing, pages, feed, diary, public profiles
