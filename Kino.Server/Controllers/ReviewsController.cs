@@ -145,12 +145,15 @@ namespace Kino.Server.Controllers
             return Ok();
         }
 
-        [HttpGet("user/{userId}")]
-        public async Task<ActionResult<IEnumerable<object>>> GetUserReviews(int userId)
+        [HttpGet("user/{username}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetUserReviews(string username)
         {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+            if (user == null) return NotFound();
+
             var reviews = await _context.Reviews
                 .Include(r => r.Movie)
-                .Where(r => r.UserId == userId)
+                .Where(r => r.UserId == user.Id)
                 .OrderByDescending(r => r.CreatedAt)
                 .Select(r => new
                 {
