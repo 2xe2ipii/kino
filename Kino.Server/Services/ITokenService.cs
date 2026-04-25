@@ -1,9 +1,9 @@
-using Microsoft.AspNetCore.Identity;
+using Kino.Server.Models;
 
 namespace Kino.Server.Services
 {
     public interface ITokenService
     {
-        string CreateToken(IdentityUser user);
+        string CreateToken(User user);
     }
 }

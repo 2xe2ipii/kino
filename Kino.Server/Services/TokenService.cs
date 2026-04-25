@@ -1,7 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Identity;
+using Kino.Server.Models;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Kino.Server.Services
@@ -18,18 +18,13 @@ namespace Kino.Server.Services
             _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         }
 
-        public string CreateToken(IdentityUser user)
+        public string CreateToken(User user)
         {
             var claims = new List<Claim>
             {
-                // FIX 1: Put the USERNAME in the 'Sub' claim (so Frontend shows "Drex")
-                new Claim(JwtRegisteredClaimNames.Sub, user.UserName ?? "User"),
-                
-                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-                
-                // FIX 2: Put the ID in 'NameIdentifier' (so Backend knows which DB row to update)
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
-
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
@@ -45,9 +40,7 @@ namespace Kino.Server.Services
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-
-            return tokenHandler.WriteToken(token);
+            return tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
         }
     }
 }
