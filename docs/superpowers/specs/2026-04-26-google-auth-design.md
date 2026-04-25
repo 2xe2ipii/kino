@@ -33,9 +33,19 @@ User
 ├── DisplayName  string, NOT NULL           ← shown in UI (feed, profile header); seeded from Google name
 ├── AvatarUrl    string, NOT NULL           ← defaults to "https://placehold.co/400"
 ├── Bio          string, NOT NULL           ← defaults to "No bio yet."
-├── FavoriteMovie string, NOT NULL          ← defaults to ""
-└── DateJoined   DateTime, NOT NULL
+├── DateJoined   DateTime, NOT NULL
+└── TopMovies    → navigation to UserTopMovie[]
+
+UserTopMovie
+├── Id           int, PK, auto-increment
+├── UserId       int, FK → User.Id
+├── Rank         int, NOT NULL              ← 1–10; unique per user
+├── TmdbId       int, NOT NULL
+├── Title        string, NOT NULL
+└── PosterPath   string, nullable
 ```
+
+`FavoriteMovie` (single string) is removed. `UserTopMovie` allows up to 10 ranked entries per user. Unique constraint on `(UserId, Rank)` prevents duplicate ranks.
 
 `Review.UserId` and `ReviewLike.UserId` change from `string` to `int`, FK to `User.Id`.
 
@@ -196,6 +206,9 @@ VITE_GOOGLE_CLIENT_ID=<same value>
 - `ReviewsController` — logic unchanged; `GetUserReviews(string userId)` parameter type changes to `int`
 - `UsersController` — logic unchanged; `GetUser(string userId)` parameter type changes to `int`
 - Avatar upload endpoint (`POST /api/auth/upload-avatar`)
-- Profile update endpoint (`PUT /api/auth/profile`)
+- Profile update endpoint (`PUT /api/auth/profile`) — `FavoriteMovie` field removed from DTO
+- New endpoint: `PUT /api/auth/top-movies` [Authorize] — accepts `{ movies: [{ rank, tmdbId, title, posterPath }] }`, replaces the user's full top movies list (delete all + re-insert). Max 10 entries enforced server-side.
+- New endpoint included in `GET /api/auth/profile` response as `topMovies: [{ rank, tmdbId, title, posterPath }]`
+- `GET /api/users/{userId}` (public profile) also returns `topMovies`
 - Frontend routing, pages, feed, diary, public profiles
 - Deployment setup (Docker/Render/Vercel/Neon)
