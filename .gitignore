@@ -486,3 +486,8 @@ node_modules/
 dist/
 .env
 .DS_Store
+
+ARCHITECTURE_AND_SECURITY_REVIEW.md
+CLAUDE.md
+# Git worktrees
+.worktrees/
