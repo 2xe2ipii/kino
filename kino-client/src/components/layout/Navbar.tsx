@@ -45,14 +45,14 @@ export const Navbar = ({ onLogoClick }: NavbarProps) => {
         }
     };
 
-    const handleResultClick = (userId: string) => {
-        navigate(`/member/${userId}`);
+    const handleResultClick = (username: string) => {
+        navigate(`/u/${username}`);
         setShowResults(false);
         setSearchQuery('');
     };
 
     // Use display name if available, else username
-    const displayName = userProfile?.displayName || user?.sub || 'Member';
+    const displayName = userProfile?.displayName || user?.username || 'Member';
     const avatar = userProfile?.avatarUrl 
         ? (userProfile.avatarUrl.startsWith('/') ? `${BASE_URL}${userProfile.avatarUrl}` : userProfile.avatarUrl)
         : null;
@@ -89,11 +89,14 @@ export const Navbar = ({ onLogoClick }: NavbarProps) => {
                                 <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-top-2">
                                     <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Members</div>
                                     {searchResults.map(u => (
-                                        <div key={u.userId} onClick={() => handleResultClick(u.userId)} className="flex items-center gap-3 px-4 py-3 hover:bg-rose-50 cursor-pointer transition-colors">
+                                        <div key={u.username} onClick={() => handleResultClick(u.username)} className="flex items-center gap-3 px-4 py-3 hover:bg-rose-50 cursor-pointer transition-colors">
                                             <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-slate-200">
                                                 {u.avatarUrl && <img src={u.avatarUrl.startsWith('/') ? `${BASE_URL}${u.avatarUrl}` : u.avatarUrl} className="w-full h-full object-cover"/>}
                                             </div>
-                                            <span className="text-xs font-bold text-slate-700">{u.displayName}</span>
+                                            <div>
+                                                <div className="text-xs font-bold text-slate-700">{u.displayName}</div>
+                                                <div className="text-[10px] text-slate-400">@{u.username}</div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
