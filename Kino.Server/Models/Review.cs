@@ -19,7 +19,7 @@ namespace Kino.Server.Models
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        public string? UserId { get; set; } 
+        public int UserId { get; set; } 
 
         public int MovieId { get; set; }
         
