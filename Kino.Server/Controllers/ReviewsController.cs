@@ -26,12 +26,13 @@ namespace Kino.Server.Controllers
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
             int? currentUserId = userIdStr != null ? int.Parse(userIdStr) : null;
 
-            var reviews = await _context.Reviews
-                .Include(r => r.Movie)
-                .Include(r => r.Likes)
-                .OrderByDescending(r => r.CreatedAt)
-                .Take(20)
-                .Select(r => new
+            var reviews = await (
+                from r in _context.Reviews
+                    .Include(r => r.Movie)
+                    .Include(r => r.Likes)
+                join u in _context.Users on r.UserId equals u.Id
+                orderby r.CreatedAt descending
+                select new
                 {
                     r.Id,
                     r.RatingTechnical,
@@ -43,11 +44,9 @@ namespace Kino.Server.Controllers
                     Movie = new { r.Movie!.Title, r.Movie.PosterPath, r.Movie.Year },
                     Likes = r.Likes.Count,
                     IsLikedByMe = currentUserId != null && r.Likes.Any(l => l.UserId == currentUserId),
-                    Author = _context.Users
-                        .Where(u => u.Id == r.UserId)
-                        .Select(u => new { u.DisplayName, u.AvatarUrl })
-                        .FirstOrDefault()
+                    Author = new { u.DisplayName, u.AvatarUrl }
                 })
+                .Take(20)
                 .ToListAsync();
 
             return Ok(reviews);

@@ -13,6 +13,13 @@ interface TmdbMovie {
     poster_path: string;
 }
 
+// Module-level cache — survives SPA navigation (component unmount/remount)
+// but resets on a full page reload. Backend cache (8 h) handles TMDB rate limits.
+const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
+interface MovieCache { recent: TmdbMovie[]; topRated: TmdbMovie[]; upcoming: TmdbMovie[]; fetchedAt: number; }
+let _movieCache: MovieCache | null = null;
+const isCacheValid = () => _movieCache !== null && Date.now() - _movieCache.fetchedAt < CACHE_TTL_MS;
+
 const Home = () => {
     const { isAuthenticated, openModal } = useContext(AuthContext)!;
     
@@ -39,7 +46,15 @@ const Home = () => {
     // --- EFFECTS ---
 
     useEffect(() => {
-        // Fetch all categories
+        // Serve from module cache if still fresh — no network round-trip
+        if (isCacheValid()) {
+            setRecentMovies(_movieCache!.recent);
+            setTopRatedMovies(_movieCache!.topRated);
+            setUpcomingMovies(_movieCache!.upcoming);
+            setMoviesLoading(false);
+            return;
+        }
+
         const fetchData = async () => {
             try {
                 const [nowPlaying, topRated, upcoming] = await Promise.all([
@@ -47,10 +62,17 @@ const Home = () => {
                     api.get('/tmdb/top-rated'),
                     api.get('/tmdb/upcoming')
                 ]);
-                
-                setRecentMovies(nowPlaying.data.slice(0, 12));
-                setTopRatedMovies(topRated.data.slice(0, 12));
-                setUpcomingMovies(upcoming.data.slice(0, 12));
+
+                const recent = nowPlaying.data.slice(0, 12);
+                const top = topRated.data.slice(0, 12);
+                const soon = upcoming.data.slice(0, 12);
+
+                setRecentMovies(recent);
+                setTopRatedMovies(top);
+                setUpcomingMovies(soon);
+
+                // Populate module cache for subsequent navigation
+                _movieCache = { recent, topRated: top, upcoming: soon, fetchedAt: Date.now() };
             } catch (err) {
                 console.error("Failed to load movies:", err);
             } finally {
