@@ -145,6 +145,7 @@ export default function Profile() {
             });
             const res = await api.get('/auth/profile');
             setProfileData(res.data);
+            refreshProfile(); // sync Navbar display name
             setIsEditing(false);
         } catch {
             alert('Failed to save profile');

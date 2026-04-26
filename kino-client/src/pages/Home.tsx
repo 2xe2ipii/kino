@@ -27,6 +27,7 @@ const Home = () => {
     const [recentMovies, setRecentMovies] = useState<TmdbMovie[]>([]);
     const [topRatedMovies, setTopRatedMovies] = useState<TmdbMovie[]>([]);
     const [upcomingMovies, setUpcomingMovies] = useState<TmdbMovie[]>([]);
+    const [moviesLoading, setMoviesLoading] = useState(true);
     
     // Modal States
     const [selectedMovie, setSelectedMovie] = useState<TmdbMovie | null>(null);
@@ -52,6 +53,8 @@ const Home = () => {
                 setUpcomingMovies(upcoming.data.slice(0, 12));
             } catch (err) {
                 console.error("Failed to load movies:", err);
+            } finally {
+                setMoviesLoading(false);
             }
         };
 
@@ -129,6 +132,17 @@ const Home = () => {
     };
 
     const isSearching = results.length > 0;
+
+    // Skeleton placeholder shown while movies are loading
+    const MovieCardSkeleton = () => (
+        <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
+            <div className="aspect-[2/3] bg-slate-200" />
+            <div className="p-4 space-y-2">
+                <div className="h-3 bg-slate-200 rounded w-4/5" />
+                <div className="h-2 bg-slate-100 rounded w-1/3" />
+            </div>
+        </div>
+    );
 
     // Helper Component for consistent Card styling
     const MovieCard = ({ movie }: { movie: TmdbMovie }) => (
@@ -261,7 +275,9 @@ const Home = () => {
                                 Fresh Releases
                             </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                {recentMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                                {moviesLoading
+                                    ? Array.from({ length: 12 }).map((_, i) => <MovieCardSkeleton key={i} />)
+                                    : recentMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
                             </div>
                         </div>
 
@@ -272,7 +288,9 @@ const Home = () => {
                                 Critically Acclaimed
                             </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                {topRatedMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                                {moviesLoading
+                                    ? Array.from({ length: 12 }).map((_, i) => <MovieCardSkeleton key={i} />)
+                                    : topRatedMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
                             </div>
                         </div>
 
@@ -283,7 +301,9 @@ const Home = () => {
                                 Coming Soon
                             </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                {upcomingMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+                                {moviesLoading
+                                    ? Array.from({ length: 12 }).map((_, i) => <MovieCardSkeleton key={i} />)
+                                    : upcomingMovies.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
                             </div>
                         </div>
                     </>
